@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { McpServer, fromJsonSchema } from '@modelcontextprotocol/server';
 import { Api, ApiError, type Envelope } from './api.js';
 import {
@@ -116,9 +117,25 @@ function errorResult(error: unknown) {
   };
 }
 
+/**
+ * La versione che il server dichiara nell'`initialize` viene dal manifesto, non
+ * da una costante.
+ *
+ * Era scritta a mano, ed e' rimasta '0.1.0' quando il pacchetto e' passato a
+ * 0.1.1: per un giro, ogni client che si collegava riceveva una versione falsa —
+ * cioe' l'unico dato con cui chi apre una segnalazione dice quale build sta
+ * usando. Un valore che va aggiornato a mano in due posti si disallinea, non
+ * "puo'" disallinearsi.
+ *
+ * `createRequire` invece di un `import ... with { type: 'json' }` perche' il JSON
+ * sta FUORI da `rootDir`, e includerlo cambierebbe la forma di `dist/`. Da
+ * `dist/server.js` come da `src/server.ts` il percorso relativo e' lo stesso.
+ */
+const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
+
 export function createServer(): McpServer {
   const server = new McpServer(
-    { name: 'pokemontcgapi', version: '0.1.0' },
+    { name: 'pokemontcgapi', version },
     { capabilities: { tools: {} } },
   );
 
