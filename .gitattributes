@@ -1,0 +1,10 @@
+# Tutto testo, normalizzato a LF nel repo.
+* text=auto eol=lf
+
+# Il bin del pacchetto e i workflow devono restare LF anche in checkout su
+# Windows: un file con shebang e CRLF muore con "bad interpreter", e il
+# messaggio non dice nulla di utile.
+*.ts   text eol=lf
+*.js   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf

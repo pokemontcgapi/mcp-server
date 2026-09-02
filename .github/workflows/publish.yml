@@ -1,0 +1,44 @@
+name: publish
+
+# Pubblica su npm quando si tagga `v<versione>`. Il tag deve corrispondere alla
+# `version` del package.json: il job si ferma prima di pubblicare se divergono,
+# perche' un tag che non e' cio' che sta sul registry non e' piu' rintracciabile.
+#
+# Prerequisito una tantum, lato npm: scope `@pokemontcgapi` creato, primo
+# `npm publish --access public` fatto a mano, poi un granular access token con
+# permesso di scrittura su quel pacchetto, salvato qui come segreto `NPM_TOKEN`.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # provenance npm
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - name: il tag deve combaciare con package.json
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          if [ "$tag" != "$pkg" ]; then
+            echo "tag v$tag != package.json $pkg" >&2
+            exit 1
+          fi
+      - run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

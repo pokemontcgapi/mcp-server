@@ -1,0 +1,29 @@
+{
+  "name": "@pokemontcgapi/mcp",
+  "version": "0.1.0",
+  "description": "MCP server for the Pokémon TCG API: search cards, sets, illustrators and prices from any MCP client.",
+  "license": "MIT",
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "bin": { "pokemontcgapi-mcp": "dist/index.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "README.md"],
+  "mcpName": "com.pokemontcgapi/mcp",
+  "keywords": ["mcp", "modelcontextprotocol", "pokemon", "pokemon-tcg", "tcg", "card-prices", "agent", "ai"],
+  "repository": { "type": "git", "url": "git+https://github.com/pokemontcgapi/mcp-server.git" },
+  "homepage": "https://pokemontcgapi.com/mcp",
+  "bugs": { "url": "https://github.com/pokemontcgapi/mcp-server/issues" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.7",
+    "typescript": "^5.7.3"
+  }
+}
