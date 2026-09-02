@@ -4,9 +4,19 @@ name: publish
 # `version` del package.json: il job si ferma prima di pubblicare se divergono,
 # perche' un tag che non e' cio' che sta sul registry non e' piu' rintracciabile.
 #
-# Prerequisito una tantum, lato npm: scope `@pokemontcgapi` creato, primo
-# `npm publish --access public` fatto a mano, poi un granular access token con
-# permesso di scrittura su quel pacchetto, salvato qui come segreto `NPM_TOKEN`.
+# AUTENTICAZIONE: trusted publishing di npm, via OIDC. Non c'e' nessun segreto.
+# Il pacchetto su npmjs.com dichiara di fidarsi di QUESTO repo e di QUESTO file
+# — se il workflow viene rinominato, la fiducia non vale piu' e il publish viene
+# rifiutato. Percio' il nome `publish.yml` non e' un dettaglio estetico.
+#
+# Tre vincoli che vengono dalla documentazione npm e che sono tutti necessari:
+#
+#   1. `id-token: write`, senza cui GitHub non emette il token OIDC.
+#   2. npm >= 11.5.1. `setup-node` con Node 22 porta npm 10.9, che NON sa fare
+#      trusted publishing: fallirebbe chiedendo credenziali che qui non esistono.
+#      Da qui l'aggiornamento esplicito del CLI prima di pubblicare.
+#   3. NIENTE `NODE_AUTH_TOKEN` sul passo di publish. Se c'e', anche vuoto, npm
+#      prova la strada del token invece dell'OIDC.
 
 on:
   push:
@@ -15,7 +25,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write # provenance npm
+  id-token: write # necessario per l'OIDC
 
 jobs:
   publish:
@@ -27,6 +37,10 @@ jobs:
           node-version: '22'
           cache: npm
           registry-url: 'https://registry.npmjs.org'
+      - name: npm >= 11.5.1, richiesto dal trusted publishing
+        run: |
+          npm install -g npm@latest
+          npm --version
       - run: npm ci
       - run: npm run typecheck
       - run: npm run build
@@ -39,6 +53,5 @@ jobs:
             echo "tag v$tag != package.json $pkg" >&2
             exit 1
           fi
+      # Nessun `env:` qui, di proposito: vedi il vincolo 3 in cima.
       - run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
