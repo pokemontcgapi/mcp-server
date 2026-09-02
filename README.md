@@ -120,8 +120,13 @@ truncated.
 
 ## Protocol
 
-Built on `@modelcontextprotocol/server` v2, implementing the
-[2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28) revision. stdio transport.
+Built on `@modelcontextprotocol/server` v2, which negotiates the
+[2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25) revision and accepts clients
+down to `2024-10-07`. stdio transport.
+
+The revision is the library's, not a claim of our own: `SUPPORTED_PROTOCOL_VERSIONS` in
+`@modelcontextprotocol/server@2.0.0` tops out at `2025-11-25`, so a client that asks for anything
+newer is answered with that. Verified against the published package, not read off a changelog.
 
 ## Also available
 

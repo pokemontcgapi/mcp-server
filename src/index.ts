@@ -2,8 +2,8 @@
 /**
  * Entry stdio.
  *
- * `serveStdio` riceve una FABBRICA e non un'istanza: nella revisione 2026-07-28
- * il server e' senza sessione, e l'istanza viene fissata dall'apertura della
+ * `serveStdio` riceve una FABBRICA e non un'istanza: nella v2 della libreria il
+ * server e' senza sessione, e l'istanza viene fissata dall'apertura della
  * connessione. Passare un server gia' costruito e' il modo v1 di farlo, e qui
  * non funzionerebbe.
  *
