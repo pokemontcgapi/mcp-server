@@ -106,9 +106,11 @@ function textResult(text: string, structured: Record<string, unknown>) {
 function errorResult(error: unknown) {
   if (error instanceof ApiError) {
     const detail = error.details === undefined ? '' : `\n${JSON.stringify(error.details)}`;
+    // `error.message` porta gia' il codice davanti (vedi ApiError): ripeterlo
+    // qui dava "MISSING_API_KEY: MISSING_API_KEY: …" a ogni errore.
     return {
       isError: true,
-      content: [{ type: 'text' as const, text: `${error.code}: ${error.message}${detail}` }],
+      content: [{ type: 'text' as const, text: `${error.message}${detail}` }],
     };
   }
   return {
@@ -464,9 +466,9 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
     {
       title: 'List the closed vocabularies',
       description:
-        'The exact strings the catalogue uses for types, supertypes and rarities. Call this before filtering ' +
-        'on a rarity or a type rather than guessing the wording — "Rare Rainbow" and "Rainbow Rare" are not ' +
-        'the same string, and only one of them matches. Note that subtypes is currently an empty list.',
+        'The exact strings the catalogue uses for types, supertypes, subtypes and rarities. Call this before ' +
+        'filtering on a rarity or a type rather than guessing the wording — "Rare Rainbow" and "Rainbow Rare" ' +
+        'are not the same string, and only one of them matches.',
       annotations: READ_ONLY,
       inputSchema: fromJsonSchema<{ vocabulary: string }>({
         type: 'object',
@@ -479,11 +481,23 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
     },
     async (args) => {
       try {
-        const body = await api.get<{ data: string[] }>(`/v1/${args.vocabulary}`);
-        const note = body.data.length === 0 ? ' (this vocabulary is not populated in the catalogue today)' : '';
-        return textResult(`${args.vocabulary}${note}:\n${body.data.join('\n')}`, {
+        // Da `/v1/reference`, non da `/v1/<vocabolario>`: quelle quattro rotte
+        // non esistono e non sono mai esistite. Vedi `Api.reference()`.
+        const vocabularies = await api.reference();
+        const values = vocabularies[args.vocabulary];
+        if (values === undefined) {
+          // Non un 404 travestito: se un giorno l'API rinomina una chiave,
+          // questo dice QUALI ci sono invece di lasciare l'agente a indovinare.
+          return textResult(
+            `Unknown vocabulary "${args.vocabulary}". The catalogue publishes: ` +
+              `${Object.keys(vocabularies).sort().join(', ')}.`,
+            { vocabulary: args.vocabulary, available: Object.keys(vocabularies).sort() },
+          );
+        }
+        const note = values.length === 0 ? ' (this vocabulary is not populated in the catalogue today)' : '';
+        return textResult(`${args.vocabulary}${note}:\n${values.join('\n')}`, {
           vocabulary: args.vocabulary,
-          values: body.data,
+          values,
         });
       } catch (error) {
         return errorResult(error);

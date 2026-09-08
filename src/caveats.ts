@@ -24,11 +24,12 @@ export const KOREAN_COVERAGE =
   'on them returns an empty result rather than an error.';
 
 export const GAMEPLAY_FIELDS =
-  'This catalogue does NOT carry card game text. attacks, abilities, weaknesses, resistances, subtypes, ' +
-  'retreat_cost, rules, flavor_text and legalities are empty for every card; types and ' +
-  'national_pokedex_numbers are populated only on part of the Scarlet & Violet era. If the question is ' +
-  'about what a card does in play, deck legality, or damage numbers, this API cannot answer it — say so ' +
-  'rather than inferring from the card name.';
+  'Card game text is present since 2026-09-03, in English, and unevenly: attacks on 33% of the catalogue, ' +
+  'subtypes on 38%, weaknesses on 31%, flavor_text on 20%, abilities on 8%, rules on 6%. It sits on the ' +
+  '20,725 Western printings, so read against those alone attacks is on 83% of them, while Japanese and ' +
+  'Chinese printings carry none. Check the field on the card in hand rather than assuming: a null attacks ' +
+  'means we do not hold it, never that the card has no attack. Still empty for every card: level, and ' +
+  'legalities — deck legality is a question this API cannot answer, so say so rather than inferring it.';
 
 export const PRICE_CAVEAT =
   'There is no printing filter: 1st Edition, Unlimited, holofoil, reverse holofoil and graded rows all come ' +

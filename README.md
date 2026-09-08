@@ -95,10 +95,13 @@ than leaving a model to infer them:
 
 - **No Korean cards.** Zero `KR` sets and zero `ko` translations. The print region and the locale are
   modelled in the schema and carry no data, so filtering on them returns an empty result, not an error.
-- **No card game text.** `attacks`, `abilities`, `weaknesses`, `resistances`, `subtypes`,
-  `retreat_cost`, `rules`, `flavor_text` and `legalities` are empty for every card; `types` and
-  `national_pokedex_numbers` are populated only on part of the Scarlet & Violet era. If the question
-  is about what a card does in play, this API cannot answer it.
+- **Card game text is English, and uneven.** `attacks`, `abilities`, `weaknesses`, `resistances`,
+  `subtypes`, `retreat_cost`, `rules` and `flavor_text` carry rows since 3 September 2026, on the
+  20,725 Western printings — `attacks` on 33% of the whole catalogue and 83% of the Western part,
+  `subtypes` on 38%, `abilities` on 8%. Japanese and Chinese printings carry none, so a null
+  `attacks` means we do not hold it, never that the card has no attack.
+- **No format legalities.** `legalities` is empty for every card, and `level` with it. If the
+  question is about deck legality, this API cannot answer it.
 
 Both statements are measured, dated in the source, and repeated verbatim in the tool descriptions —
 so an agent is told before it calls, not after.

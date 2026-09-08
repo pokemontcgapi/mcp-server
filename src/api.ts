@@ -55,6 +55,35 @@ export class Api {
     this.apiKey = apiKey;
   }
 
+  private referencePending: Promise<Record<string, readonly string[]>> | null = null;
+
+  /**
+   * I vocabolari chiusi, tutti insieme e una volta sola.
+   *
+   * `/v1/reference` li porta in una risposta. Fino al 05/09/2026 il tool
+   * `ptcg_get_reference` chiedeva invece `/v1/types`, `/v1/subtypes`,
+   * `/v1/supertypes` e `/v1/rarities`, che il servizio non ha mai montato:
+   * rispondeva `ROUTE_NOT_FOUND` per OGNI vocabolario, quindi uno degli otto
+   * tool non poteva riuscire nemmeno una volta. L'SDK aveva lo stesso difetto
+   * ed e' stato corretto il 03/09; questo pacchetto e' rimasto indietro.
+   *
+   * Si memorizza la PROMISE e non il valore: due tool call ravvicinate
+   * condividono una richiesta sola invece di farne due e tenere l'ultima. Il
+   * processo MCP vive quanto la sessione, e questi elenchi cambiano quando
+   * cambia il catalogo, non fra due domande.
+   */
+  reference(): Promise<Record<string, readonly string[]>> {
+    this.referencePending ??= this.get<{ data: Record<string, readonly string[]> }>('/v1/reference')
+      .then((body) => body.data)
+      .catch((error: unknown) => {
+        // Un guasto non deve restare memorizzato: la chiamata dopo deve poter
+        // riprovare invece di ereditare per sempre la promise fallita.
+        this.referencePending = null;
+        throw error;
+      });
+    return this.referencePending;
+  }
+
   async get<T>(path: string, params: Record<string, unknown> = {}): Promise<T> {
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
