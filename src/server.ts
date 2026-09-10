@@ -220,6 +220,9 @@ export function createServer(): McpServer {
               orderBy: args.order_by,
               cursor: cursor ?? args.cursor,
               limit: args.region === undefined ? limit : 100,
+              // Dal 2026-09-10 l'indice sulle righe di lista si chiede:
+              // 1 credito ogni 50 righe. Senza, `index_eur` in `select` e' 400.
+              include: 'index',
               select: CARD_FIELDS,
             }),
           (card): Verdict => (args.region === undefined || card.print_region === args.region ? 'keep' : 'skip'),
@@ -285,7 +288,7 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
         const body = await api.get<{ data: CardRow[]; requested: number; found: number }>('/v1/cards/batch', {
           ids,
           lang: args.lang,
-          include: args.include_prices === true ? 'prices' : undefined,
+          include: args.include_prices === true ? 'prices' : 'index',
           select: args.include_prices === true ? undefined : CARD_FIELDS,
         });
 
