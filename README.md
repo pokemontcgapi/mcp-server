@@ -1,14 +1,31 @@
 # @pokemontcgapi/mcp
 
 An [MCP](https://modelcontextprotocol.io) server for the Pokémon TCG API at
-[pokemontcgapi.com](https://pokemontcgapi.com). It gives an agent eight tools over a
-catalogue of **615 sets and 52,337 cards** — 379 Japanese sets, 176 international, 60 Simplified
-Chinese — with card names in six languages, illustrators, images, and prices that carry their source,
-basis, grade and sample size.
+[pokemontcgapi.com](https://pokemontcgapi.com). It gives an agent eight tools over the whole
+catalogue: international, Japanese and Simplified Chinese print lines, sealed products, card names in
+eight locales, illustrators, images, and prices that carry their source, basis, grade and sample
+size. The current counts are live at
+[/v1/status](https://api.pokemontcgapi.com/v1/status) and broken down on
+[coverage.json](https://pokemontcgapi.com/coverage.json).
 
 Unofficial. Not produced, endorsed, supported by or affiliated with Nintendo, Creatures Inc.,
 GAME FREAK inc. or The Pokémon Company International. Pokémon and all related marks are trademarks of
 their respective owners.
+
+## Get a key
+
+One call, no dashboard and no card:
+
+```bash
+curl -s -X POST "https://api.pokemontcgapi.com/v1/accounts/free" \
+  -H "Content-Type: application/json" \
+  -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"email":"you@example.com"}'
+```
+
+The key comes back once, in `data.key.secret`. Confirming the address we email raises the trial from
+80 to 800 credits, and the trial ends 30 days after signup. Paid plans start at 29 EUR a month:
+[pricing](https://pokemontcgapi.com/pricing).
 
 ## Install
 
@@ -64,8 +81,11 @@ keeps the key out of the committed file:
 }
 ```
 
-Environment: `PTCG_API_KEY` (optional today), `PTCG_BASE_URL` (defaults to
-`https://api.pokemontcgapi.com`). Node ≥ 20.
+Environment: `PTCG_API_KEY`, needed by seven of the eight tools, and `PTCG_BASE_URL` (defaults to
+`https://api.pokemontcgapi.com`). Node ≥ 20. The exception is `ptcg_get_reference`, which reads a
+public route. `ptcg_get_catalogue_status` is not an exception: it starts on the public `/v1/status`
+and then reads one set per print region, which needs the key. Without it the server starts and lists
+its tools, then those seven calls come back asking for it.
 
 ## The tools
 
@@ -82,7 +102,7 @@ the model does not have to chain four calls to answer one thing.
 | `ptcg_get_reference` | The exact strings for types, supertypes and rarities, so filters are not guessed |
 | `ptcg_list_artists` | Illustrators and how many cards each drew |
 | `ptcg_get_catalogue_status` | What the catalogue does and does **not** contain, measured live |
-| `ptcg_identify_card_from_image` | "Which card is this a photo of?" — ranked candidates, and an explicit refusal when reprints share the artwork. 25 credits a call |
+| `ptcg_identify_card_from_image` | "Which card is this a photo of?" — ranked candidates, and an explicit refusal when reprints share the artwork. 25 credits a call, and included from the Growth plan up |
 
 Every tool is annotated `readOnlyHint: true` and `destructiveHint: false`. Nothing here writes.
 `ptcg_identify_card_from_image` is the one marked `idempotentHint: false`, because the same photo costs
@@ -97,14 +117,15 @@ than leaving a model to infer them:
   modelled in the schema and carry no data, so filtering on them returns an empty result, not an error.
 - **Card game text is English, and uneven.** `attacks`, `abilities`, `weaknesses`, `resistances`,
   `subtypes`, `retreat_cost`, `rules` and `flavor_text` carry rows since 3 September 2026, on the
-  20,725 Western printings — `attacks` on 33% of the whole catalogue and 83% of the Western part,
-  `subtypes` on 38%, `abilities` on 8%. Japanese and Chinese printings carry none, so a null
-  `attacks` means we do not hold it, never that the card has no attack.
+  20,725 Western printings. Measured on 16 September 2026 against 57,450 cards: `attacks` on 29.9% of
+  the whole catalogue and 82.9% of the Western part, `subtypes` 35.0%, `weaknesses` 28.0%,
+  `flavor_text` 17.9%, `abilities` 7.0%, `rules` 5.1%. Japanese and Chinese printings carry none, so a
+  null `attacks` means we do not hold it, never that the card has no attack.
 - **No format legalities.** `legalities` is empty for every card, and `level` with it. If the
   question is about deck legality, this API cannot answer it.
 
-Both statements are measured, dated in the source, and repeated verbatim in the tool descriptions —
-so an agent is told before it calls, not after.
+All three are measured, dated in the source, and repeated verbatim in the tool descriptions, so an
+agent is told before it calls rather than after.
 
 ## Reading prices correctly
 
@@ -114,10 +135,18 @@ first number. `basis` separates `GUIDE` (published upstream) from `DERIVED` (com
 `PTCG_INDEX` is our own composite in EUR and carries `sample_n`. Every observation has an `as_of`
 date and is delayed by at least a day — never quote a price without it.
 
+What the plan withholds is named rather than hidden: `graded` and `non_english_locales` for a trial
+key, `graded` on Developer, nothing from Growth up. The API says so in `meta.withheld` on the prices
+route, in the `X-Plan-Withheld` header when prices ride on a card, and in a top-level `withheld`
+field on the batch. So a card with no graded rows may be the plan speaking, not the catalogue.
+`ptcg_get_card_prices` reads a card with its prices, so the exclusions arrive in that header.
+
 ## Context discipline
 
 Results are capped at 50 rows regardless of what the API allows, sent as aligned tables rather than
-JSON (about 40% fewer tokens, and models misread them less often), with a compact field projection.
+JSON, with a compact field projection. A table is shorter than the same rows as JSON because the keys
+are not repeated on every row; we do not publish a percentage, because we have no reproducible
+measurement to show next to it.
 Truncation is always announced along with the cursor to continue. Price rows are the one thing never
 truncated.
 

@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import { McpServer, fromJsonSchema } from '@modelcontextprotocol/server';
-import { Api, ApiError, type Envelope } from './api.js';
+import { Api, ApiError, DEFAULT_BASE_URL, type Envelope } from './api.js';
 import {
   GAMEPLAY_FIELDS,
   KOREAN_COVERAGE,
@@ -28,9 +28,16 @@ import { MAX_ROWS, clampLimit, moreLine, table } from './render.js';
  * modello non puo' commettere.
  *
  * Cio' che NON e' esposto, e perche':
- * - gli endpoint di prezzo dedicati e il feed delle modifiche: rispondono 404
- *   sul servizio in esercizio, e uno strumento che fallisce e' peggio di uno
- *   assente perche' il modello lo riprova;
+ * - gli endpoint di prezzo dedicati (`/v1/cards/{id}/prices`): rispondono 200,
+ *   misurato il 2026-09-16, e sono l'unica strada per filtrare il locale delle
+ *   quotazioni. Restano fuori perche' ptcg_get_card_prices fa lo stesso lavoro
+ *   in una chiamata e a un credito invece di due; in cambio la tabella mostra
+ *   il locale di ogni riga, che e' la cosa da non perdere;
+ * - il feed delle modifiche: risponde benissimo (misurato il 2026-09-16:
+ *   879.813 righe, ultima di stanotte), ed e' escluso per un'altra ragione,
+ *   cioe' che serve a tenere allineata una copia locale e non a rispondere a
+ *   una domanda dentro una conversazione. La frase «risponde 404» era falsa e
+ *   stava nel sorgente pubblico;
  * - gli export bulk: un agente non deve tirarsi in contesto un dump.
  *
  * L'ottavo strumento e' il riconoscimento da foto, ed e' l'unico che non e' una
@@ -45,7 +52,11 @@ const api = new Api();
 
 /** Solo cio' che esiste davvero. Un enum e' una promessa. */
 const REGIONS = ['WEST', 'JP', 'CN'] as const;
-const LOCALES = ['en', 'ja', 'fr', 'de', 'es', 'it'] as const;
+// Gli otto locali che hanno davvero righe in tabella, misurati il 2026-09-16:
+// en 57.421, fr 42.858, de 42.604, ja 27.230, it 21.644, es 21.003, pt 13.822,
+// zh 3.492. L'API ne accetta nove: `ko` resta fuori perche' ha zero righe, ed
+// e' la regola per cui un enum non promette cio' che non esiste.
+const LOCALES = ['en', 'fr', 'de', 'ja', 'it', 'es', 'pt', 'zh'] as const;
 
 const READ_ONLY = {
   readOnlyHint: true,
@@ -59,6 +70,8 @@ const CARD_FIELDS = ['id', 'name', 'number', 'rarity', 'set_code', 'set_name', '
 
 interface CardRow {
   id: string;
+  /** L'id storico, quando esiste: `base1-4` per la carta che oggi e' `bs-4`. */
+  legacy_id?: string | null;
   name: string;
   number: string;
   rarity: string | null;
@@ -84,8 +97,11 @@ interface PriceRow {
   source: string;
   variant: string;
   basis: string;
-  price: number;
+  /** L'API risponde `amount`. Letto come `price`, la colonna usciva vuota. */
+  amount: number;
   currency: string;
+  /** Il locale della quotazione, che non e' la lingua del nome della carta. */
+  locale: string | null;
   printing: string | null;
   condition: string | null;
   grading: { company: string; score: string } | null;
@@ -99,12 +115,37 @@ function textResult(text: string, structured: Record<string, unknown>) {
 }
 
 /**
+ * Il messaggio dell'API dice «mandala come header X-Api-Key»: giusto per un
+ * client HTTP, sbagliato qui. Un modello non puo' mettere header su questo
+ * trasporto, e provando a farlo gira a vuoto invece di chiedere la sola cosa
+ * che sblocca la situazione, cioe' una variabile nella configurazione.
+ */
+const MISSING_KEY_HELP = [
+  'PTCG_API_KEY is not set for this MCP server. Seven of the eight tools will fail without it. The exception is ptcg_get_reference, which reads a public route; ptcg_get_catalogue_status is not an exception, because after the public /v1/status it reads one set per print region, which is not public.',
+  'This cannot be fixed from inside the conversation: it is an environment variable in the MCP client configuration.',
+  'Ask the user to add it, then restart the client. A key takes one call and no account setup:',
+  '',
+  `curl -s -X POST "${process.env['PTCG_BASE_URL'] ?? DEFAULT_BASE_URL}/v1/accounts/free" \\`,
+  '  -H "Content-Type: application/json" \\',
+  '  -H "Idempotency-Key: $(uuidgen)" \\',
+  '  -d \'{"email":"you@example.com"}\'',
+  '',
+  'The key is in data.key.secret and is shown once. Details: https://pokemontcgapi.com/mcp',
+].join('\n');
+
+/**
  * Un errore dell'API torna come `isError`, non come eccezione: il modello deve
  * poterlo leggere e correggersi da solo. `details.valid_fields` e simili sono
  * la parte utile, quindi si riportano invece di essere riassunti.
  */
 function errorResult(error: unknown) {
   if (error instanceof ApiError) {
+    // Vuota, non solo assente: `"env": {"PTCG_API_KEY": ""}` e un segnaposto
+    // non espanso sono il modo piu' comune di sbagliare la configurazione, e
+    // sono esattamente i casi in cui questo aiuto serve.
+    if (error.code === 'MISSING_API_KEY' && (process.env['PTCG_API_KEY'] ?? '') === '') {
+      return { isError: true, content: [{ type: 'text' as const, text: MISSING_KEY_HELP }] };
+    }
     const detail = error.details === undefined ? '' : `\n${JSON.stringify(error.details)}`;
     // `error.message` porta gia' il codice davanti (vedi ApiError): ripeterlo
     // qui dava "MISSING_API_KEY: MISSING_API_KEY: …" a ogni errore.
@@ -237,7 +278,11 @@ export function createServer(): McpServer {
 More rows available. Call again with cursor="${collected.nextCursor}".`
             : collected.exhausted
               ? ''
-              : `
+              : collected.truncatedMidPage
+                ? `
+
+The row limit filled in the middle of a page, so there is no cursor to continue from: one here would skip the rest of that page. Narrow the query (a set, a rarity, a tighter release window) or raise limit.`
+                : `
 
 Scan stopped after ${collected.scannedPages} pages without reaching the end of the catalogue; there may be more matches.`;
 
@@ -289,10 +334,18 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
           ids,
           lang: args.lang,
           include: args.include_prices === true ? 'prices' : 'index',
-          select: args.include_prices === true ? undefined : CARD_FIELDS,
+          // `legacy_id` sta nella proiezione perche' serve a dire chi manca:
+          // `base1-4` torna come `bs-4`, e senza il confronto sull'alias il
+          // server dichiarava mancante una carta che aveva in mano.
+          select: args.include_prices === true ? undefined : [...CARD_FIELDS, 'legacy_id'],
         });
 
-        const missing = ids.filter((id) => !body.data.some((c) => c.id === id));
+        const seen = new Set<string>();
+        for (const c of body.data) {
+          seen.add(c.id.toLowerCase());
+          if (c.legacy_id != null) seen.add(c.legacy_id.toLowerCase());
+        }
+        const missing = ids.filter((id) => !seen.has(id.toLowerCase()));
         const text =
           table(
             ['id', 'name', 'set', 'rarity', 'region', 'released', 'EUR idx'],
@@ -345,13 +398,18 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
         const text =
           `${card.name} (${card.id}) — composite index ${card.index_eur ?? '—'} EUR, last recomputed ${card.last_price_at ?? '—'}\n\n` +
           table(
-            ['source', 'variant', 'basis', 'price', 'cur', 'printing', 'grade', 'as_of', 'n'],
+            // `loc` e' in tabella perche' senza il modello confronta una
+            // quotazione francese con una inglese come se fossero la stessa
+            // cosa: `include=prices` su una carta restituisce ogni locale che
+            // il piano concede, e la valuta non dice la lingua.
+            ['source', 'variant', 'basis', 'price', 'cur', 'loc', 'printing', 'grade', 'as_of', 'n'],
             rows.map((p) => [
               p.source,
               p.variant,
               p.basis,
-              p.price,
+              p.amount,
               p.currency,
+              p.locale,
               p.printing,
               p.grading === null ? null : `${p.grading.company} ${p.grading.score}`,
               p.as_of,
@@ -375,7 +433,7 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
     {
       title: 'List Pokémon TCG sets',
       description:
-        'Every set with its code, series, print region, release date and printed total. One call answers ' +
+        'Every set with its code, series, print region, release date and, where we hold it, printed total: no Japanese set has one. One call answers ' +
         'questions like "every Japanese set released in 2024". ' +
         REGION_CAVEAT,
       annotations: READ_ONLY,
@@ -422,7 +480,11 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
               // delle carte: `name:Base` non trova nulla, `Base` si'.
               q: args.name,
               orderBy,
-              cursor,
+              // `cursor ?? args.cursor`: quello locale vale dalla seconda
+              // pagina in poi, ma la PRIMA richiesta deve partire da dove il
+              // chiamante ha detto. Senza, un client che continua ricominciava
+              // dall'inizio e rileggeva le stesse righe per sempre.
+              cursor: cursor ?? args.cursor,
               limit: 100,
             }),
           (set): Verdict => {
@@ -446,7 +508,11 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
 More rows available. Call again with cursor="${collected.nextCursor}".`
             : collected.exhausted
               ? ''
-              : `
+              : collected.truncatedMidPage
+                ? `
+
+The row limit filled in the middle of a page, so there is no cursor to continue from: one here would skip the rest of that page. Narrow the window or raise limit.`
+                : `
 
 Scan stopped after ${collected.scannedPages} pages; there may be more matching sets.`;
 
@@ -586,7 +652,10 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
           sealed_products: status.catalog.sealed,
           sets_by_print_region: Object.fromEntries(perRegion.map((r) => [r.region, r.sets])),
           card_name_locales: [...LOCALES],
-          price_sources: ['TCGPLAYER', 'CARDMARKET', 'CARDTRADER', 'EBAY_SOLD', 'PTCG_INDEX', 'COMMUNITY'],
+          // I valori ammessi da `?source=`, copiati da `validSources` nel Go.
+          // Diceva `EBAY_SOLD`, che non esiste e fa prendere un 400 a chi ci
+          // filtra, e ometteva PRICECHARTING, che e' la seconda fonte per volume.
+          price_sources: ['TCGPLAYER', 'PRICECHARTING', 'CARDMARKET', 'CARDTRADER', 'EBAY', 'COMMUNITY', 'PTCG_INDEX'],
           coverage_notes: [KOREAN_COVERAGE, GAMEPLAY_FIELDS, LANGUAGE_CAVEAT],
         };
 
@@ -630,7 +699,9 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
         'Recognise a Pokemon card from a photograph and return ranked candidates. Use this instead of guessing ' +
         'from what you see in an image: reprints share their artwork, so visual identification alone cannot ' +
         'name a printing, and this tool says so when it cannot. Costs 25 credits per call against 1 for a ' +
-        'lookup — do not call it in a loop. Pass `set` or `region` when the user has told you either.',
+        'lookup — do not call it in a loop. Pass `set` or `region` when the user has told you either. ' +
+        'Included from the Growth plan up: on a trial or Developer key it answers PLAN_REQUIRED without ' +
+        'spending credits, and retrying will not change that.',
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

@@ -14,7 +14,7 @@
  * di packages/sdk-typescript/src/{client,errors}.ts.
  */
 
-const DEFAULT_BASE_URL = 'https://api.pokemontcgapi.com';
+export const DEFAULT_BASE_URL = 'https://api.pokemontcgapi.com';
 const TIMEOUT_MS = 20_000;
 
 export interface ApiErrorShape {
