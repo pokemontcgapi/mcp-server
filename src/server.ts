@@ -9,6 +9,7 @@ import {
   PRICE_CAVEAT,
   REGION_CAVEAT,
 } from './caveats.js';
+import { batchMissing, missingText, type BatchResult } from './batch.js';
 import { collect, type Verdict } from './collect.js';
 import { MAX_ROWS, clampLimit, moreLine, table } from './render.js';
 
@@ -213,7 +214,10 @@ export function createServer(): McpServer {
         type: 'object',
         properties: {
           name: { type: 'string', description: 'Card name or part of it, e.g. "charizard".' },
-          set: { type: 'string', description: 'Set code, e.g. "bs", "sv3". Use ptcg_list_sets to find it.' },
+          set: {
+            type: 'string',
+            description: 'Set code, e.g. "bs", "sv3", or several separated by commas. Use ptcg_list_sets to find it.',
+          },
           region: { type: 'string', enum: [...REGIONS], description: 'Print region of the set the card belongs to.' },
           rarity: { type: 'string', description: 'Exact printed rarity. Use ptcg_get_reference to list valid values.' },
           artist: { type: 'string', description: 'Illustrator name.' },
@@ -245,13 +249,13 @@ export function createServer(): McpServer {
         if (args.artist !== undefined && args.artist !== '') clauses.push(`artist:${JSON.stringify(args.artist)}`);
         if (args.released_from !== undefined) clauses.push(`set.releaseDate:[${args.released_from} TO *]`);
         if (args.released_to !== undefined) clauses.push(`set.releaseDate:[* TO ${args.released_to}]`);
+        // La regione filtra l'API (`set.region` e' nella grammatica): scorrerla
+        // qui voleva dire pagare 2 crediti a pagina per scartare righe WEST.
+        if (args.region !== undefined) clauses.push(`set.region:${args.region}`);
         if (args.q !== undefined && args.q !== '') clauses.push(args.q);
 
         const limit = clampLimit(args.limit);
 
-        // `print_region` non e' un campo della grammatica: sta sul set, non
-        // sulla carta. Si scorre finche' non si sono raccolte abbastanza righe,
-        // e se la scansione non e' finita lo si DICE.
         const collected = await collect<CardRow>(
           (cursor) =>
             api.get<Envelope<CardRow>>('/v1/cards', {
@@ -260,13 +264,14 @@ export function createServer(): McpServer {
               lang: args.lang,
               orderBy: args.order_by,
               cursor: cursor ?? args.cursor,
-              limit: args.region === undefined ? limit : 100,
-              // Dal 2026-09-10 l'indice sulle righe di lista si chiede:
-              // 1 credito ogni 50 righe. Senza, `index_eur` in `select` e' 400.
+              limit,
+              // Dal 2026-09-10 l'indice sulle righe di lista si chiede: 1 credito
+              // ogni 50 righe. Senza, `index_eur` in `select` torna righe senza
+              // il campo e `meta.withheld: ["index"]`.
               include: 'index',
               select: CARD_FIELDS,
             }),
-          (card): Verdict => (args.region === undefined || card.print_region === args.region ? 'keep' : 'skip'),
+          (): Verdict => 'keep',
           limit,
         );
 
@@ -305,9 +310,10 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
     {
       title: 'Get Pokémon cards by id',
       description:
-        'Fetch one or many cards by id, in a single call. Ids are the printed coordinate — set code, dash, ' +
-        'collector number, e.g. "bs-4" — and the alternate legacy id ("base1-4") resolves on the same route. ' +
-        'Ids that do not exist are omitted from the result; compare requested against found. ' +
+        'Fetch one or many cards by id, in a single call. Ids join set code and collector number, ' +
+        'e.g. "bs-4"; the historical alias "base1-4" resolves on the same route. ' +
+        'A canonical set prefix resolves only inside that set. Unresolved ids are listed in missing, ' +
+        'with existing historical alternatives in missing_details when the API provides them. ' +
         GAMEPLAY_FIELDS,
       annotations: READ_ONLY,
       inputSchema: fromJsonSchema<{ ids: string[]; lang?: string; include_prices?: boolean }>({
@@ -330,7 +336,7 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
     async (args) => {
       try {
         const ids = args.ids.slice(0, 100);
-        const body = await api.get<{ data: CardRow[]; requested: number; found: number }>('/v1/cards/batch', {
+        const body = await api.get<BatchResult<CardRow>>('/v1/cards/batch', {
           ids,
           lang: args.lang,
           include: args.include_prices === true ? 'prices' : 'index',
@@ -340,20 +346,17 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
           select: args.include_prices === true ? undefined : [...CARD_FIELDS, 'legacy_id'],
         });
 
-        const seen = new Set<string>();
-        for (const c of body.data) {
-          seen.add(c.id.toLowerCase());
-          if (c.legacy_id != null) seen.add(c.legacy_id.toLowerCase());
-        }
-        const missing = ids.filter((id) => !seen.has(id.toLowerCase()));
+        const missingDetails = batchMissing(ids, body);
+        // Manteniamo l'array di stringhe del tool per i client MCP esistenti.
+        const missing = missingDetails.map((item) => item.id);
         const text =
           table(
             ['id', 'name', 'set', 'rarity', 'region', 'released', 'EUR idx'],
             body.data.map((c) => [c.id, c.name, c.set_code, c.rarity, c.print_region, c.release_date, c.index_eur]),
           ) +
-          (missing.length === 0 ? '' : `\n\nNot found: ${missing.join(', ')}`);
+          missingText(missingDetails);
 
-        return textResult(text, { cards: body.data, requested: body.requested, found: body.found, missing });
+        return textResult(text, { cards: body.data, requested: body.requested, found: body.found, missing, missing_details: missingDetails });
       } catch (error) {
         return errorResult(error);
       }
@@ -386,7 +389,7 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
     },
     async (args) => {
       try {
-        const card = await api.get<{ id: string; name: string; index_eur: number | null; last_price_at: string | null; prices?: PriceRow[] }>(
+        const { body: card, withheld } = await api.getWithWithheld<{ id: string; name: string; index_eur: number | null; last_price_at: string | null; prices?: PriceRow[] }>(
           `/v1/cards/${encodeURIComponent(args.id)}`,
           { include: 'prices' },
         );
@@ -415,11 +418,15 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
               p.as_of,
               p.sample_n,
             ]),
-          );
+          ) +
+          (withheld.length === 0
+            ? ''
+            : `\n\nWithheld by the plan of this key, not missing from the catalogue: ${withheld.join(', ')}.`);
 
         return textResult(text, {
           card: { id: card.id, name: card.name, index_eur: card.index_eur, last_price_at: card.last_price_at },
           prices: rows,
+          ...(withheld.length === 0 ? {} : { withheld }),
         });
       } catch (error) {
         return errorResult(error);

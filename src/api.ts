@@ -84,7 +84,22 @@ export class Api {
     return this.referencePending;
   }
 
-  async get<T>(path: string, params: Record<string, unknown> = {}): Promise<T> {
+  /**
+   * Come `get`, ma riporta anche `X-Plan-Withheld`: su una carta letta con
+   * `include=prices` e' l'unico posto in cui l'API dice quali righe il piano ha
+   * tenuto fuori, e senza il modello scambia "il piano non le copre" per "non
+   * esistono".
+   */
+  async getWithWithheld<T>(path: string, params: Record<string, unknown> = {}): Promise<{ body: T; withheld: string[] }> {
+    let withheld: string[] = [];
+    const body = await this.get<T>(path, params, (response) => {
+      const raw = response.headers.get('x-plan-withheld');
+      withheld = raw === null || raw === '' ? [] : raw.split(',').map((v) => v.trim());
+    });
+    return { body, withheld };
+  }
+
+  async get<T>(path: string, params: Record<string, unknown> = {}, inspect?: (response: Response) => void): Promise<T> {
     const search = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
       if (value === undefined || value === null || value === '') continue;
@@ -117,6 +132,7 @@ export class Api {
         throw new ApiError(response.status, body);
       }
 
+      inspect?.(response);
       return (await response.json()) as T;
     } finally {
       clearTimeout(timer);

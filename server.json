@@ -1,0 +1,39 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.pokemontcgapi/mcp",
+  "title": "Pokémon TCG API",
+  "description": "English, Japanese and Chinese Pokémon cards: search, sets, illustrators, prices, photo lookup.",
+  "version": "0.1.6",
+  "websiteUrl": "https://pokemontcgapi.com/mcp",
+  "repository": {
+    "url": "https://github.com/pokemontcgapi/mcp-server",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@pokemontcgapi/mcp",
+      "version": "0.1.6",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "PTCG_API_KEY",
+          "description": "API key for pokemontcgapi.com, needed by seven of the eight tools. POST /v1/accounts/free returns one without a dashboard or a card.",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "PTCG_BASE_URL",
+          "description": "Override the API base URL. Defaults to https://api.pokemontcgapi.com.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 An [MCP](https://modelcontextprotocol.io) server for the Pokémon TCG API at
 [pokemontcgapi.com](https://pokemontcgapi.com). It gives an agent eight tools over the whole
-catalogue: international, Japanese and Simplified Chinese print lines, sealed products, card names in
+catalogue: international, Japanese and Simplified Chinese print lines, card names in
 eight locales, illustrators, images, and prices that carry their source, basis, grade and sample
 size. The current counts are live at
 [/v1/status](https://api.pokemontcgapi.com/v1/status) and broken down on
@@ -108,6 +108,23 @@ Every tool is annotated `readOnlyHint: true` and `destructiveHint: false`. Nothi
 `ptcg_identify_card_from_image` is the one marked `idempotentHint: false`, because the same photo costs
 25 credits every time it is sent — a client must not retry it on its own.
 
+## Importing a card catalogue
+
+For a complete card import, use the REST API directly:
+`GET /v1/cards?limit=250&orderBy=id`, then follow `links.next` verbatim. The flat list fills pages
+across set boundaries and uses fewer requests than a separate card loop for every set.
+Add `include=translations` for names at the plain catalogue cost. Priced includes have separate tariffs.
+For a single print region, add `q=set.region:JP` or `q=set.region:CN`; `lang` only selects a name translation.
+Use `/v1/sets/{code}/cards` when you need a particular set and `/v1/sets?region=JP` to browse set metadata.
+
+The [quickstart](https://pokemontcgapi.com/docs/quickstart#page-the-whole-catalogue) contains both
+paging loops and dated measurements. The
+[migration guide](https://pokemontcgapi.com/docs/migrate-from-pokemontcg-io) explains how to capture
+a change feed watermark before importing and maintain the replica afterwards.
+The MCP search tool is intended for bounded interactive searches; its `region` argument is sent to
+the API as `set.region:JP` (or `CN`, `WEST`), so a Japanese search reads Japanese rows only. Use REST
+for a complete import.
+
 ## What this API does not have
 
 The last tool exists because of this section, and it returns these facts from a live call rather
@@ -121,7 +138,7 @@ than leaving a model to infer them:
   the whole catalogue and 82.9% of the Western part, `subtypes` 35.0%, `weaknesses` 28.0%,
   `flavor_text` 17.9%, `abilities` 7.0%, `rules` 5.1%. Japanese and Chinese printings carry none, so a
   null `attacks` means we do not hold it, never that the card has no attack.
-- **No format legalities.** `legalities` is empty for every card, and `level` with it. If the
+- **No format legalities.** The card object carries no `legalities` field, and `level` is empty. If the
   question is about deck legality, this API cannot answer it.
 
 All three are measured, dated in the source, and repeated verbatim in the tool descriptions, so an
@@ -139,6 +156,14 @@ What the plan withholds is named rather than hidden: `graded` and `non_english_l
 key, `graded` on Developer, nothing from Growth up. The API says so in `meta.withheld` on the prices
 route, in the `X-Plan-Withheld` header when prices ride on a card, and in a top-level `withheld`
 field on the batch. So a card with no graded rows may be the plan speaking, not the catalogue.
+
+For `ptcg_get_cards`, the API's `missing` field is authoritative when present, including its
+`suggested_id` values. The tool keeps its existing `missing` array of strings and adds
+`missing_details`, an array of `{ id, suggested_id? }`; the text also shows each suggestion.
+If the API omits `missing`, the tool falls back to comparing requested ids with returned `id`
+and `legacy_id`, ignoring case and repeated ids. This supports older API versions without
+another request, but cannot discover their unreported canonical-set collisions or suggestions.
+The current API omits `missing` when every id resolves, so that fallback then returns an empty array.
 `ptcg_get_card_prices` reads a card with its prices, so the exclusions arrive in that header.
 
 ## Context discipline
@@ -174,7 +199,7 @@ npm run typecheck
 npm run build
 ```
 
-Node >= 20. No test suite lives here yet: what CI enforces is that the package
+Node >= 20. `npm test` runs the unit tests in `tests/`. What CI enforces is that the package
 typechecks and builds on both Node 20 and Node 22, and that `npm pack` produces
 the file list the registry is meant to receive.
 
