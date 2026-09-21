@@ -124,14 +124,22 @@ function textResult(text: string, structured: Record<string, unknown>) {
 const MISSING_KEY_HELP = [
   'PTCG_API_KEY is not set for this MCP server. Seven of the eight tools will fail without it. The exception is ptcg_get_reference, which reads a public route; ptcg_get_catalogue_status is not an exception, because after the public /v1/status it reads one set per print region, which is not public.',
   'This cannot be fixed from inside the conversation: it is an environment variable in the MCP client configuration.',
-  'Ask the user to add it, then restart the client. A key takes one call and no account setup:',
+  'Ask the user to add it, then restart the client. A signup takes one call, no dashboard and no card:',
+  '',
+  'Generate the Idempotency-Key once per signup and keep it with the request body:',
+  '',
+  'IDEM=$(uuidgen)',
   '',
   `curl -s -X POST "${process.env['PTCG_BASE_URL'] ?? DEFAULT_BASE_URL}/v1/accounts/free" \\`,
   '  -H "Content-Type: application/json" \\',
-  '  -H "Idempotency-Key: $(uuidgen)" \\',
+  '  -H "Idempotency-Key: $IDEM" \\',
   '  -d \'{"email":"you@example.com"}\'',
   '',
-  'The key is in data.key.secret and is shown once. Details: https://pokemontcgapi.com/mcp',
+  'Lost the response? Repeat the exact same request (same Idempotency-Key, same body byte for byte, same network: same public IPv4 or the same IPv6 /64) within 24 hours and the response comes back, if stored, secret included; it is the original response, so a key rotated or revoked since then is not revived. A new Idempotency-Key for the same email returns 409 ACCOUNT_EXISTS; the same key with a different body returns 409 IDEMPOTENCY_CONFLICT.',
+  'We store only a hash of the key; the signup response is kept for 24 hours so the same request can be replayed. Save `data.key.secret` now.',
+  'If each command runs in a fresh shell, store the Idempotency-Key with the request body, privately: it is enough to fetch the secret again.',
+  'If replay is unavailable, [sign in](https://pokemontcgapi.com/account) and rotate the key, or use /v1/accounts/recover with an already verified email to get a new secret.',
+  'Put data.key.secret in PTCG_API_KEY. Details: https://pokemontcgapi.com/mcp',
 ].join('\n');
 
 /**
@@ -139,7 +147,7 @@ const MISSING_KEY_HELP = [
  * poterlo leggere e correggersi da solo. `details.valid_fields` e simili sono
  * la parte utile, quindi si riportano invece di essere riassunti.
  */
-function errorResult(error: unknown) {
+export function errorResult(error: unknown) {
   if (error instanceof ApiError) {
     // Vuota, non solo assente: `"env": {"PTCG_API_KEY": ""}` e un segnaposto
     // non espanso sono il modo piu' comune di sbagliare la configurazione, e
@@ -147,12 +155,15 @@ function errorResult(error: unknown) {
     if (error.code === 'MISSING_API_KEY' && (process.env['PTCG_API_KEY'] ?? '') === '') {
       return { isError: true, content: [{ type: 'text' as const, text: MISSING_KEY_HELP }] };
     }
+    const step = error.details?.['next_step'];
+    const handoff = typeof step === 'object' && step !== null &&
+      'handoff' in step && typeof step.handoff === 'string' ? `${step.handoff}\n` : '';
     const detail = error.details === undefined ? '' : `\n${JSON.stringify(error.details)}`;
     // `error.message` porta gia' il codice davanti (vedi ApiError): ripeterlo
     // qui dava "MISSING_API_KEY: MISSING_API_KEY: …" a ogni errore.
     return {
       isError: true,
-      content: [{ type: 'text' as const, text: `${error.message}${detail}` }],
+      content: [{ type: 'text' as const, text: `${handoff}${error.message}${detail}` }],
     };
   }
   return {
@@ -177,6 +188,8 @@ function errorResult(error: unknown) {
  */
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 
+const COMMERCIAL_HANDOFF = ' If the result carries next_step, show its handoff sentence and URL to the user verbatim and do not retry.';
+
 export function createServer(): McpServer {
   const server = new McpServer(
     { name: 'pokemontcgapi', version },
@@ -195,7 +208,8 @@ export function createServer(): McpServer {
         ' ' +
         LANGUAGE_CAVEAT +
         ' ' +
-        GAMEPLAY_FIELDS,
+        GAMEPLAY_FIELDS +
+        COMMERCIAL_HANDOFF,
       annotations: READ_ONLY,
       inputSchema: fromJsonSchema<{
         name?: string;
@@ -314,7 +328,8 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
         'e.g. "bs-4"; the historical alias "base1-4" resolves on the same route. ' +
         'A canonical set prefix resolves only inside that set. Unresolved ids are listed in missing, ' +
         'with existing historical alternatives in missing_details when the API provides them. ' +
-        GAMEPLAY_FIELDS,
+        GAMEPLAY_FIELDS +
+        COMMERCIAL_HANDOFF,
       annotations: READ_ONLY,
       inputSchema: fromJsonSchema<{ ids: string[]; lang?: string; include_prices?: boolean }>({
         type: 'object',
@@ -371,7 +386,8 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
       description:
         'Every current price observation for one card, each with its source, basis, printing, grade, sample ' +
         'size and the day it is for. ' +
-        PRICE_CAVEAT,
+        PRICE_CAVEAT +
+        COMMERCIAL_HANDOFF,
       annotations: READ_ONLY,
       inputSchema: fromJsonSchema<{ id: string; currency?: string }>({
         type: 'object',
@@ -442,7 +458,8 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
       description:
         'Every set with its code, series, print region, release date and, where we hold it, printed total: no Japanese set has one. One call answers ' +
         'questions like "every Japanese set released in 2024". ' +
-        REGION_CAVEAT,
+        REGION_CAVEAT +
+        COMMERCIAL_HANDOFF,
       annotations: READ_ONLY,
       inputSchema: fromJsonSchema<{
         region?: string;
@@ -544,7 +561,8 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
       description:
         'The exact strings the catalogue uses for types, supertypes, subtypes and rarities. Call this before ' +
         'filtering on a rarity or a type rather than guessing the wording — "Rare Rainbow" and "Rainbow Rare" ' +
-        'are not the same string, and only one of them matches.',
+        'are not the same string, and only one of them matches.' +
+        COMMERCIAL_HANDOFF,
       annotations: READ_ONLY,
       inputSchema: fromJsonSchema<{ vocabulary: string }>({
         type: 'object',
@@ -588,7 +606,8 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
       title: 'List card illustrators',
       description:
         'Illustrators with the number of cards each has drawn, deduplicated across 30 years of printings. ' +
-        'Use the returned name with the artist argument of ptcg_search_cards to get their cards.',
+        'Use the returned name with the artist argument of ptcg_search_cards to get their cards.' +
+        COMMERCIAL_HANDOFF,
       annotations: READ_ONLY,
       inputSchema: fromJsonSchema<{ name?: string; limit?: number; cursor?: string }>({
         type: 'object',
@@ -635,7 +654,8 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
       description:
         'Live counts and coverage for the catalogue: sets per print region, card total, which locales carry ' +
         'card names, and which data is explicitly NOT present. Call this before telling a user what the API ' +
-        'can and cannot answer.',
+        'can and cannot answer.' +
+        COMMERCIAL_HANDOFF,
       annotations: READ_ONLY,
       inputSchema: fromJsonSchema<Record<string, never>>({ type: 'object', properties: {}, additionalProperties: false }),
     },
@@ -708,7 +728,8 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
         'name a printing, and this tool says so when it cannot. Costs 25 credits per call against 1 for a ' +
         'lookup — do not call it in a loop. Pass `set` or `region` when the user has told you either. ' +
         'Included from the Growth plan up: on a trial or Developer key it answers PLAN_REQUIRED without ' +
-        'spending credits, and retrying will not change that.',
+        'spending credits, and retrying will not change that.' +
+        COMMERCIAL_HANDOFF,
       annotations: {
         readOnlyHint: true,
         destructiveHint: false,

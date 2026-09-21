@@ -14,16 +14,26 @@ their respective owners.
 
 ## Get a key
 
-One call, no dashboard and no card:
+Generate the Idempotency-Key once per signup and keep it with the request body:
+
+```bash
+IDEM=$(uuidgen)
+```
 
 ```bash
 curl -s -X POST "https://api.pokemontcgapi.com/v1/accounts/free" \
   -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen)" \
+  -H "Idempotency-Key: $IDEM" \
   -d '{"email":"you@example.com"}'
 ```
 
-The key comes back once, in `data.key.secret`. Confirming the address we email raises the trial from
+Lost the response? Repeat the exact same request (same Idempotency-Key, same body byte for byte, same network: same public IPv4 or the same IPv6 /64) within 24 hours and the response comes back, if stored, secret included; it is the original response, so a key rotated or revoked since then is not revived. A new Idempotency-Key for the same email returns 409 ACCOUNT_EXISTS; the same key with a different body returns 409 IDEMPOTENCY_CONFLICT.
+
+We store only a hash of the key; the signup response is kept for 24 hours so the same request can be replayed. Save `data.key.secret` now.
+
+If replay is unavailable, [sign in](https://pokemontcgapi.com/account) and rotate the key, or use /v1/accounts/recover with an already verified email to get a new secret.
+
+The key comes back in `data.key.secret`. Confirming the address we email raises the trial from
 80 to 800 credits, and the trial ends 30 days after signup. Paid plans start at 29 EUR a month:
 [pricing](https://pokemontcgapi.com/pricing).
 
@@ -90,7 +100,7 @@ its tools, then those seven calls come back asking for it.
 ## The tools
 
 Eight tools, not one per endpoint. `tools/list` sits in the model's context on every turn, so the
-whole surface is just over 9 KB, and each tool is shaped like a question rather than like a route —
+whole surface is about 11 KB, and each tool is shaped like a question rather than like a route —
 the model does not have to chain four calls to answer one thing.
 
 | Tool | Answers |
@@ -107,6 +117,8 @@ the model does not have to chain four calls to answer one thing.
 Every tool is annotated `readOnlyHint: true` and `destructiveHint: false`. Nothing here writes.
 `ptcg_identify_card_from_image` is the one marked `idempotentHint: false`, because the same photo costs
 25 credits every time it is sent — a client must not retry it on its own.
+
+Commercial refusals put `next_step.handoff` on the first line of the tool result, followed by the API message and complete details. Show that sentence and its URL to the account owner verbatim and do not retry. The owner completes checkout, email verification or the contact step.
 
 ## Importing a card catalogue
 
