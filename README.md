@@ -1,5 +1,7 @@
 # @pokemontcgapi/mcp
 
+[![npm](https://img.shields.io/npm/v/%40pokemontcgapi%2Fmcp)](https://www.npmjs.com/package/@pokemontcgapi/mcp) [![license](https://img.shields.io/npm/l/%40pokemontcgapi%2Fmcp)](./LICENSE) [![Glama](https://glama.ai/mcp/servers/pokemontcgapi/mcp-server/badges/score.svg)](https://glama.ai/mcp/servers/pokemontcgapi/mcp-server)
+
 An [MCP](https://modelcontextprotocol.io) server for the Pokémon TCG API at
 [pokemontcgapi.com](https://pokemontcgapi.com). It gives an agent eight tools over the whole
 catalogue: international, Japanese and Simplified Chinese print lines, card names in
