@@ -3,7 +3,7 @@
   "name": "com.pokemontcgapi/mcp",
   "title": "Pokémon TCG API",
   "description": "English, Japanese and Chinese Pokémon cards: search, sets, illustrators, prices, photo lookup.",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "websiteUrl": "https://pokemontcgapi.com/mcp",
   "repository": {
     "url": "https://github.com/pokemontcgapi/mcp-server",
@@ -14,7 +14,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@pokemontcgapi/mcp",
-      "version": "0.1.7",
+      "version": "0.1.8",
       "transport": {
         "type": "stdio"
       },

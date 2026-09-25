@@ -105,7 +105,7 @@ interface PriceRow {
   locale: string | null;
   printing: string | null;
   condition: string | null;
-  grading: { company: string; score: string } | null;
+  grading: { company: string | null; score: string } | null;
   as_of: string;
   sample_n: number | null;
   provenance: string;
@@ -430,7 +430,7 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
               p.currency,
               p.locale,
               p.printing,
-              p.grading === null ? null : `${p.grading.company} ${p.grading.score}`,
+              p.grading === null ? null : `${p.grading.company ?? 'any grader'} ${p.grading.score}`,
               p.as_of,
               p.sample_n,
             ]),
