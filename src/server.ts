@@ -280,8 +280,9 @@ export function createServer(): McpServer {
               cursor: cursor ?? args.cursor,
               limit,
               // Dal 2026-09-10 l'indice sulle righe di lista si chiede: 1 credito
-              // ogni 50 righe. Senza, `index_eur` in `select` torna righe senza
-              // il campo e `meta.withheld: ["index"]`.
+              // ogni 50 righe, e dal 2026-09-30 e' anche il prezzo della lista
+              // nuda (per 50 righe chieste). Senza, `index_eur` in `select`
+              // torna righe senza il campo e `meta.withheld: ["index"]`.
               include: 'index',
               select: CARD_FIELDS,
             }),
@@ -738,7 +739,7 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
         idempotentHint: false,
         openWorldHint: true,
       },
-      inputSchema: fromJsonSchema<{ image_base64: string; set?: string; region?: string; top_k?: number }>({
+      inputSchema: fromJsonSchema<{ image_base64: string; set?: string; region?: string; top_k?: number; include?: string }>({
         type: 'object',
         properties: {
           image_base64: {
@@ -748,12 +749,13 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
           set: { type: 'string', description: 'Set code to restrict to, e.g. "sv3". Resolves reprint ties.' },
           region: { type: 'string', enum: [...REGIONS], description: 'Print region to restrict to.' },
           top_k: { type: 'integer', minimum: 1, maximum: 10, description: 'Candidates to return. Default 3.' },
+          include: { type: 'string', description: 'Optional index, prices, or index,prices. Adds 1 and/or 4 credits for top_k <= 10.' },
         },
         required: ['image_base64'],
         additionalProperties: false,
       }),
     },
-    async ({ image_base64, set, region, top_k }) => {
+    async ({ image_base64, set, region, top_k, include }) => {
       try {
         const cleaned = image_base64.includes(',') && image_base64.startsWith('data:')
           ? image_base64.slice(image_base64.indexOf(',') + 1)
@@ -767,6 +769,7 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
         if (set !== undefined) fields['set'] = set;
         if (region !== undefined) fields['region'] = region;
         if (top_k !== undefined) fields['top_k'] = String(top_k);
+        if (include !== undefined) fields['include'] = include;
 
         const body = await api.postImage<{
           data: {
@@ -778,11 +781,15 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
               number: string;
               set: { code: string; name: string; print_region: string };
               rarity: string | null;
+              index_eur?: number | null;
+              last_price_at?: string | null;
+              prices?: unknown[];
               distance: number;
               confidence: number;
             }[];
           };
           meta: { regions_detected: number; cards_indexed: number };
+          withheld?: string[];
         }>('/v1/vision/identify', bytes, fields);
 
         // La riga di istruzione viene PRIMA della tabella, non dopo: un modello
@@ -809,6 +816,7 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
           c.set.print_region,
           c.rarity ?? '—',
           c.distance,
+          ...(include === undefined ? [] : [c.index_eur ?? '—', c.prices?.length ?? '—']),
         ]);
 
         const text = [
@@ -816,10 +824,11 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
           '',
           rows.length === 0
             ? 'No candidates within range.'
-            : table(['id', 'name', 'set / no.', 'region', 'rarity', 'distance'], rows),
+            : table(['id', 'name', 'set / no.', 'region', 'rarity', 'distance', ...(include === undefined ? [] : ['index EUR', 'quotes'])], rows),
           '',
           'distance is 0-512, lower is closer; real matches land well under 150. ' +
             `Compared against ${body.meta.cards_indexed} indexed card images.`,
+          ...(body.withheld?.length ? [`Plan withheld: ${body.withheld.join(', ')}.`] : []),
         ].join('\n');
 
         return textResult(text, body.data);

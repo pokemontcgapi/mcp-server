@@ -120,7 +120,7 @@ Every tool is annotated `readOnlyHint: true` and `destructiveHint: false`. Nothi
 `ptcg_identify_card_from_image` is the one marked `idempotentHint: false`, because the same photo costs
 25 credits every time it is sent — a client must not retry it on its own.
 
-Commercial refusals put `next_step.handoff` on the first line of the tool result, followed by the API message and complete details. Show that sentence and its URL to the account owner verbatim and do not retry. The owner completes checkout, email verification or the contact step.
+Commercial refusals put `next_step.handoff` on the first line of the tool result, followed by the API message and complete details. Show that sentence and its URL to the account owner verbatim and do not retry. The owner completes checkout, email verification or the contact step. `CARD_ALLOWANCE_EXCEEDED` is one of them: the period has retrieved its distinct-card allowance (1,000 for the trial, 30,000 a month on Developer); cards already retrieved keep answering, new ones need the next period or Growth.
 
 ## Importing a card catalogue
 
