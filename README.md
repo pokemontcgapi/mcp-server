@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/%40pokemontcgapi%2Fmcp)](https://www.npmjs.com/package/@pokemontcgapi/mcp) [![license](https://img.shields.io/npm/l/%40pokemontcgapi%2Fmcp)](./LICENSE) [![Glama](https://glama.ai/mcp/servers/pokemontcgapi/mcp-server/badges/score.svg)](https://glama.ai/mcp/servers/pokemontcgapi/mcp-server)
 
 An [MCP](https://modelcontextprotocol.io) server for the Pokémon TCG API at
-[pokemontcgapi.com](https://pokemontcgapi.com). It gives an agent eight tools over the whole
+[pokemontcgapi.com](https://pokemontcgapi.com). It gives an agent eleven tools over the whole
 catalogue: international, Japanese and Simplified Chinese print lines, card names in
 eight locales, illustrators, images, and prices that carry their source, basis, grade and sample
 size. The current counts are live at
@@ -93,15 +93,15 @@ keeps the key out of the committed file:
 }
 ```
 
-Environment: `PTCG_API_KEY`, needed by seven of the eight tools, and `PTCG_BASE_URL` (defaults to
+Environment: `PTCG_API_KEY`, needed by ten of the eleven tools, and `PTCG_BASE_URL` (defaults to
 `https://api.pokemontcgapi.com`). Node ≥ 20. The exception is `ptcg_get_reference`, which reads a
 public route. `ptcg_get_catalogue_status` is not an exception: it starts on the public `/v1/status`
 and then reads one set per print region, which needs the key. Without it the server starts and lists
-its tools, then those seven calls come back asking for it.
+its tools, then those ten calls come back asking for it.
 
 ## The tools
 
-Eight tools, not one per endpoint. `tools/list` sits in the model's context on every turn, so the
+Eleven tools, not one per endpoint. `tools/list` sits in the model's context on every turn, so the
 whole surface is about 11 KB, and each tool is shaped like a question rather than like a route —
 the model does not have to chain four calls to answer one thing.
 
@@ -114,11 +114,28 @@ the model does not have to chain four calls to answer one thing.
 | `ptcg_get_reference` | The exact strings for types, supertypes and rarities, so filters are not guessed |
 | `ptcg_list_artists` | Illustrators and how many cards each drew |
 | `ptcg_get_catalogue_status` | What the catalogue does and does **not** contain, measured live |
+| `ptcg_measure_centering` | Photo of one face to ratios, uncertainty and geometry. 25 credits; needs-review without ceilings is expected |
+| `ptcg_grade_centering` | Centering-only ceilings from known face/axis ratios. 1 credit |
+| `ptcg_get_centering_standards` | PSA/BGS/CGC/SGC thresholds, source status and URLs. 1 credit |
 | `ptcg_identify_card_from_image` | "Which card is this a photo of?" — ranked candidates, and an explicit refusal when reprints share the artwork. 25 credits a call, and included from the Growth plan up |
 
 Every tool is annotated `readOnlyHint: true` and `destructiveHint: false`. Nothing here writes.
-`ptcg_identify_card_from_image` is the one marked `idempotentHint: false`, because the same photo costs
-25 credits every time it is sent — a client must not retry it on its own.
+`ptcg_identify_card_from_image` and the three centering tools are marked `idempotentHint: false`:
+each invocation consumes credits. Do not retry paid work automatically.
+
+Centering is included on Growth and higher; Developer is excluded. A verified Free trial includes
+5 measure and 5 confirm calls, independently. Grade and standards have no separate trial call counter.
+Measure accepts base64 image bytes, explicit front/back face, optional standard/small card_size and
+corrected corners (TL, TR, BR, BL in EXIF-oriented pixels reduced to longest edge <=2560 px).
+It returns ratios, uncertainty and editable geometry; needs-review with null ceilings is expected.
+After correcting corners with another measure, a person checks or moves cut and print lines in the
+app. Grade ceilings arrive after that app calls confirm, or from known ratios through grade.
+
+There is deliberately **no confirm tool**. An assistant cannot assert that a person reviewed the
+lines. Only the app collecting that person's explicit acceptance may send confirmed_by: person.
+Always display **ceiling from centering alone, not a prediction of the final grade**. Never label a
+result verified or certified. Keep source status, incomplete flags and uncertainty visible.
+See the [two-step guide](https://pokemontcgapi.com/docs/centering).
 
 Commercial refusals put `next_step.handoff` on the first line of the tool result, followed by the API message and complete details. Show that sentence and its URL to the account owner verbatim and do not retry. The owner completes checkout, email verification or the contact step. `CARD_ALLOWANCE_EXCEEDED` is one of them: the period has retrieved its distinct-card allowance (1,000 for the trial, 30,000 a month on Developer); cards already retrieved keep answering, new ones need the next period or Growth.
 

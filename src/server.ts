@@ -327,8 +327,9 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
       description:
         'Fetch one or many cards by id, in a single call. Ids join set code and collector number, ' +
         'e.g. "bs-4"; the historical alias "base1-4" resolves on the same route. ' +
-        'A canonical set prefix resolves only inside that set. Unresolved ids are listed in missing, ' +
-        'with existing historical alternatives in missing_details when the API provides them. ' +
+        'A complete native id wins over a legacy alias; otherwise the legacy resolves even with a JP set prefix. ' +
+        'Unresolved ids are listed in missing, ' +
+        'with existing candidates in missing_details when the API provides them. ' +
         GAMEPLAY_FIELDS +
         COMMERCIAL_HANDOFF,
       annotations: READ_ONLY,
@@ -837,6 +838,75 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
       }
     },
   );
+
+  // No confirm tool: an assistant cannot assert that a person reviewed the lines.
+  const centeringPlan = ' Growth and higher; Developer excluded. Verified Free trial: 5 measure and 5 confirm calls independently; grade and standards have no separate trial call counter. ';
+  const centeringDisclaimer = 'Always display: ceiling from centering alone, not a prediction of the final grade. Never call results verified or certified.';
+  const centeringAnnotations = { ...READ_ONLY, idempotentHint: false };
+  const ratioSchema = {
+    oneOf: [
+      { type: 'number', minimum: 0, maximum: 100, not: { const: 1 } },
+      { type: 'string', description: 'Known ratio, e.g. 55/45 or 0.55. Do not guess face or axis.' },
+      { type: 'array', items: { type: ['number', 'string'] }, minItems: 2, maxItems: 2 },
+    ],
+  };
+  const houseSchema = { type: 'string', enum: ['PSA', 'BGS', 'CGC', 'SGC'] };
+  const faceSchema = { type: 'string', enum: ['front', 'back'] };
+  server.registerTool('ptcg_measure_centering', {
+    title: 'Measure card centering from a photo',
+    description: 'Measure ratios, uncertainty and editable geometry from one face. Costs 25 credits; do not call in a loop. needs-review without grade ceilings is expected. If corners are wrong, ask the person to correct them and measure again. Grade ceilings follow a person checking or moving the lines in the app (confirm is deliberately not an MCP tool), or known ratios via ptcg_grade_centering. Never claim an assistant checked the lines on behalf of a person.' + centeringPlan + centeringDisclaimer + COMMERCIAL_HANDOFF,
+    annotations: centeringAnnotations,
+    inputSchema: fromJsonSchema<{
+      image_base64: string; face: 'front' | 'back'; card_size?: 'standard' | 'small'; corners?: { x: number; y: number }[];
+    }>({
+      type: 'object', properties: {
+        image_base64: { type: 'string', description: 'Photo bytes as base64, optionally a data URL. Entire API body <=10 MiB; single-frame image <=40 MP.' },
+        face: faceSchema,
+        card_size: { type: 'string', enum: ['standard', 'small'], default: 'standard' },
+        corners: { type: 'array', minItems: 4, maxItems: 4, description: 'Optional TL, TR, BR, BL points in EXIF-oriented image pixels reduced to longest edge <=2560 px. Do not invent corrections.', items: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'], additionalProperties: false } },
+      }, required: ['image_base64', 'face'], additionalProperties: false,
+    }),
+  }, async ({ image_base64, face, card_size, corners }) => {
+    try {
+      const cleaned = image_base64.startsWith('data:') ? image_base64.slice(image_base64.indexOf(',') + 1) : image_base64;
+      const bytes = Uint8Array.from(Buffer.from(cleaned, 'base64'));
+      if (bytes.byteLength === 0) throw new ApiError(400, { code: 'INVALID_PARAMETER', message: 'image_base64 decoded to nothing.' });
+      const fields: Record<string, string> = { face };
+      if (card_size !== undefined) fields['card_size'] = card_size;
+      if (corners !== undefined) fields['corners'] = JSON.stringify(corners);
+      const body = await api.postImage<{ data: Record<string, unknown> }>('/v1/centering/measure', bytes, fields);
+      return textResult('Show ratios, uncertainty and warnings. needs-review is expected. A person must review the lines in the app before confirm. ' + centeringDisclaimer + '\n' + JSON.stringify(body.data), body.data);
+    } catch (error) { return errorResult(error); }
+  });
+  server.registerTool('ptcg_grade_centering', {
+    title: 'Grade known centering ratios',
+    description: 'Calculate centering-only maximum grades from ratios already known. Costs 1 credit. Supply at least one face/axis ratio; never guess missing faces or axes. Read incomplete, missing_faces and missing_axes; missing measurements can lower the ceiling. Numeric 1 is ambiguous; use 55, 0.55, 55/45 or [55,45]. Do not mix nested and corresponding flat fields.' + centeringPlan + centeringDisclaimer + COMMERCIAL_HANDOFF,
+    annotations: centeringAnnotations,
+    inputSchema: fromJsonSchema<Record<string, unknown>>({
+      type: 'object', properties: {
+        front_lr: ratioSchema, front_tb: ratioSchema, back_lr: ratioSchema, back_tb: ratioSchema,
+        front: { type: 'object', properties: { lr: ratioSchema, tb: ratioSchema }, anyOf: [{ required: ['lr'] }, { required: ['tb'] }], additionalProperties: false },
+        back: { type: 'object', properties: { lr: ratioSchema, tb: ratioSchema }, anyOf: [{ required: ['lr'] }, { required: ['tb'] }], additionalProperties: false },
+        house: houseSchema,
+      }, anyOf: ['front_lr', 'front_tb', 'back_lr', 'back_tb', 'front', 'back'].map((name) => ({ required: [name] })), additionalProperties: false,
+    }),
+  }, async (args) => {
+    try {
+      const body = await api.postJson<{ data: Record<string, unknown> }>('/v1/centering/grade', args);
+      return textResult(centeringDisclaimer + '\n' + JSON.stringify(body.data), body.data);
+    } catch (error) { return errorResult(error); }
+  });
+  server.registerTool('ptcg_get_centering_standards', {
+    title: 'Read centering standards',
+    description: 'Read PSA/BGS/CGC/SGC centering thresholds and sources. Costs 1 credit. Preserve official/interpreted/approximate source status and rounding rules; SGC has no published back table. Source review dates describe provenance, not result certification.' + centeringPlan + centeringDisclaimer + COMMERCIAL_HANDOFF,
+    annotations: centeringAnnotations,
+    inputSchema: fromJsonSchema<{ house?: string; face?: string }>({ type: 'object', properties: { house: houseSchema, face: faceSchema }, additionalProperties: false }),
+  }, async (args) => {
+    try {
+      const body = await api.get<{ data: Record<string, unknown> }>('/v1/centering/standards', args);
+      return textResult(centeringDisclaimer + '\n' + JSON.stringify(body.data), body.data);
+    } catch (error) { return errorResult(error); }
+  });
 
   return server;
 }

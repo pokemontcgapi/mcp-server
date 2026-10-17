@@ -20,12 +20,12 @@ test('gli errori senza next_step conservano il testo precedente', () => {
   assert.equal(errorResult(error).content[0].text, `INVALID_PARAMETER: Wrong\n{"field":"window"}`);
 });
 
-test('tutti gli otto tool terminano la descrizione con la regola di consegna', async (t) => {
+test('tutti gli undici tool terminano la descrizione con la regola di consegna', async (t) => {
   const register = t.mock.method(McpServer.prototype, 'registerTool');
   const server = createServer();
   try {
     const suffix = ' If the result carries next_step, show its handoff sentence and URL to the user verbatim and do not retry.';
-    assert.equal(register.mock.calls.length, 8);
+    assert.equal(register.mock.calls.length, 11);
     for (const { arguments: [name, config] } of register.mock.calls) {
       assert.ok(config.description.endsWith(suffix), name);
       assert.ok(config.description.indexOf(suffix.trim()) > 0, name);
