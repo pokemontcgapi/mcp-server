@@ -189,4 +189,28 @@ export class Api {
       clearTimeout(timer);
     }
   }
+  /** JSON POST, never retried: used for known centering ratios. */
+  async postJson<T>(path: string, body: Record<string, unknown>): Promise<T> {
+    const headers: Record<string, string> = {
+      accept: 'application/json', 'content-type': 'application/json', 'user-agent': '@pokemontcgapi/mcp',
+    };
+    if (this.apiKey !== undefined) headers['x-api-key'] = this.apiKey;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(`${this.baseUrl}${path}`, {
+        method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal,
+      });
+      if (!response.ok) {
+        let error: ApiErrorShape = { code: `HTTP_${response.status}`, message: response.statusText };
+        try {
+          const parsed = await response.json() as { error?: ApiErrorShape };
+          if (parsed.error?.code !== undefined) error = parsed.error;
+        } catch { /* Keep the status fallback for non-JSON errors. */ }
+        throw new ApiError(response.status, error);
+      }
+      return await response.json() as T;
+    } finally { clearTimeout(timer); }
+  }
+
 }
