@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/%40pokemontcgapi%2Fmcp)](https://www.npmjs.com/package/@pokemontcgapi/mcp) [![license](https://img.shields.io/npm/l/%40pokemontcgapi%2Fmcp)](./LICENSE) [![Glama](https://glama.ai/mcp/servers/pokemontcgapi/mcp-server/badges/score.svg)](https://glama.ai/mcp/servers/pokemontcgapi/mcp-server)
 
 An [MCP](https://modelcontextprotocol.io) server for the Pokémon TCG API at
-[pokemontcgapi.com](https://pokemontcgapi.com). It gives an agent eleven tools over the whole
+[pokemontcgapi.com](https://pokemontcgapi.com). It gives an agent thirteen tools over the whole
 catalogue: international, Japanese and Simplified Chinese print lines, card names in
 eight locales, illustrators, images, and prices that carry their source, basis, grade and sample
 size. The current counts are live at
@@ -93,16 +93,16 @@ keeps the key out of the committed file:
 }
 ```
 
-Environment: `PTCG_API_KEY`, needed by ten of the eleven tools, and `PTCG_BASE_URL` (defaults to
+Environment: `PTCG_API_KEY`, needed by twelve of the thirteen tools, and `PTCG_BASE_URL` (defaults to
 `https://api.pokemontcgapi.com`). Node ≥ 20. The exception is `ptcg_get_reference`, which reads a
 public route. `ptcg_get_catalogue_status` is not an exception: it starts on the public `/v1/status`
 and then reads one set per print region, which needs the key. Without it the server starts and lists
-its tools, then those ten calls come back asking for it.
+its tools, then those twelve calls come back asking for it.
 
 ## The tools
 
-Eleven tools, not one per endpoint. `tools/list` sits in the model's context on every turn, so the
-whole surface is about 11 KB, and each tool is shaped like a question rather than like a route —
+Thirteen tools, not one per endpoint. `tools/list` sits in the model's context on every turn, so the
+whole surface is about 13 KB, and each tool is shaped like a question rather than like a route —
 the model does not have to chain four calls to answer one thing.
 
 | Tool | Answers |
@@ -114,6 +114,8 @@ the model does not have to chain four calls to answer one thing.
 | `ptcg_get_reference` | The exact strings for types, supertypes and rarities, so filters are not guessed |
 | `ptcg_list_artists` | Illustrators and how many cards each drew |
 | `ptcg_get_catalogue_status` | What the catalogue does and does **not** contain, measured live |
+| `ptcg_search_sealed` | Booster boxes, packs, ETBs, tins, blisters and collections by name, set, kind or language, with the languages each exists in and its euro index. 1 credit per 50 rows |
+| `ptcg_get_sealed_prices` | Every current observation for one sealed product, with the language the box is printed in and its `as_of`. 3 credits |
 | `ptcg_measure_centering` | Photo of one face to ratios, uncertainty and geometry. 25 credits; needs-review without ceilings is expected |
 | `ptcg_grade_centering` | Centering-only ceilings from known face/axis ratios. 1 credit |
 | `ptcg_get_centering_standards` | PSA/BGS/CGC/SGC thresholds, source status and URLs. 1 credit |
@@ -196,6 +198,23 @@ and `legacy_id`, ignoring case and repeated ids. This supports older API version
 another request, but cannot discover their unreported canonical-set collisions or suggestions.
 The current API omits `missing` when every id resolves, so that fallback then returns an empty array.
 `ptcg_get_card_prices` reads a card with its prices, so the exclusions arrive in that header.
+
+## Sealed products
+
+`/v1/sealed` carries booster boxes, booster packs, elite trainer boxes, tins, blisters and
+collections across the international, Japanese and Simplified Chinese lines. Each product carries
+`languages`, the languages it physically exists in; the Simplified Chinese line, 273 products added
+on 30 October 2026 in the `cn-` sets, carries `["zh"]`. The API has no language filter on that list,
+so `ptcg_search_sealed` with `language` scans pages of 100 at 2 credits each, keeps the rows whose
+`languages` contain it, and says when it stopped before the end of the catalogue. Without `language`
+it is one page, 1 credit per 50 rows, cursor included.
+
+`ptcg_get_sealed_prices` reads the product (1 credit) and then its quotes (2 credits). Sealed rows
+carry no `condition`, `printing` or `grading`; `locale` is the language the box is printed in, and the
+Chinese line carries Cardmarket `LOW` and `TREND` under `zh`. `index` is the catalogue price of the
+product in euro with its date, the same `index_eur` as on the product row, with `sample_n` null and
+`by_locale` empty, because the composite is computed for cards only. Rows under a locale other than
+`en` follow the plan rules of the cards, and the tool names them in the same withheld line.
 
 ## Context discipline
 

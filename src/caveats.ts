@@ -58,3 +58,16 @@ export const REGION_CAVEAT =
   '. Japanese sets are not translations of Western ones: they have their own boundaries, their own ' +
   'numbering and their own release dates, so a Japanese set and its international counterpart are two ' +
   'different rows.';
+
+/**
+ * I sigillati, dal 30/10/2026: il giorno in cui la linea cinese semplificata
+ * e' arrivata in `/v1/sealed`. I numeri sono quelli letti dall'API quel giorno
+ * (273 prodotti cinesi, 2.364 in tutto): quando cambiano, si cambiano qui.
+ */
+export const SEALED_COVERAGE =
+  'Sealed products (booster boxes, booster packs, elite trainer boxes, tins, blisters, collections) cover the ' +
+  'international, Japanese and Simplified Chinese lines: languages on each product lists the languages it ' +
+  'physically exists in, and the Simplified Chinese line (273 products on 2026-10-30, in the cn- sets) carries ' +
+  '["zh"]. The list has no language filter. Sealed quotes have no condition, printing or grading; their locale ' +
+  'is the language the box is printed in, Cardmarket LOW and TREND under zh for the Chinese line, delayed by at ' +
+  'least a day like every row, and rows under a locale other than en follow the plan rules of the cards.';

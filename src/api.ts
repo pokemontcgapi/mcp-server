@@ -2,7 +2,7 @@
  * Client HTTP minimo verso api.pokemontcgapi.com.
  *
  * PERCHE' NON DIPENDE DA @pokemontcgapi/sdk, che pure esiste in questo repo:
- * questo server usa sei endpoint in sola lettura e non pagina mai in
+ * questo server usa una dozzina di endpoint in sola lettura e non pagina mai in
  * profondita' (ogni risposta e' tagliata a 50 righe prima di tornare a un
  * modello), quindi dell'SDK userebbe il trasporto e nient'altro. In cambio
  * porterebbe un secondo pacchetto da tenere allineato in versione a ogni

@@ -8,17 +8,18 @@ import {
   MEASURED_ON,
   PRICE_CAVEAT,
   REGION_CAVEAT,
+  SEALED_COVERAGE,
 } from './caveats.js';
 import { batchMissing, missingText, type BatchResult } from './batch.js';
 import { collect, type Verdict } from './collect.js';
 import { MAX_ROWS, clampLimit, moreLine, table } from './render.js';
 
 /**
- * Sette strumenti, non sedici.
+ * Tredici strumenti, non venti.
  *
  * La tentazione e' mappare uno strumento per endpoint: e' meccanico e sembra
  * completo. Costa due cose. La prima e' che `tools/list` sta nel contesto a
- * OGNI turno, quindi sedici schemi si pagano anche nelle conversazioni che non
+ * OGNI turno, quindi venti schemi si pagano anche nelle conversazioni che non
  * toccano le carte. La seconda, peggiore, e' che costringe il modello a
  * incatenare chiamate — cerca il set, prendi il codice, elenca le carte,
  * prendi i prezzi — e ogni anello e' un punto in cui puo' sbagliare.
@@ -41,8 +42,14 @@ import { MAX_ROWS, clampLimit, moreLine, table } from './render.js';
  *   stava nel sorgente pubblico;
  * - gli export bulk: un agente non deve tirarsi in contesto un dump.
  *
- * L'ottavo strumento e' il riconoscimento da foto, ed e' l'unico che non e' una
- * lettura. Sta qui perche' e' esattamente cio' che un agente multimodale non
+ * I sigillati sono entrati il 30/10/2026, il giorno in cui la linea cinese
+ * semplificata e' arrivata in `/v1/sealed`: fino ad allora un agente a cui si
+ * chiedeva «quanto vale un booster box cinese» non aveva uno strumento da
+ * chiamare, e rispondeva con quello che sapeva, cioe' inventando. Due
+ * strumenti, ricerca e prezzi, perche' la lista non incorpora le quotazioni.
+ *
+ * Il riconoscimento da foto e' l'unico strumento che non e' una lettura. Sta
+ * qui perche' e' esattamente cio' che un agente multimodale non
  * puo' fare da solo: guardare una carta e riconoscerla dall'illustrazione e'
  * il compito su cui un modello generico allucina con la massima sicurezza —
  * dice "Charizard Base Set" davanti a una ristampa e non ha modo di sapere di
@@ -94,6 +101,20 @@ interface SetRow {
   printed_total: number | null;
 }
 
+interface SealedRow {
+  /** Lo sku: e' l'identificatore pubblico, lo stesso che apre /v1/sealed/{id}. */
+  id: string;
+  name: string;
+  kind: string | null;
+  set_code: string | null;
+  set_name: string | null;
+  release_date: string | null;
+  /** Le lingue in cui il prodotto esiste fisicamente: `["zh"]` sulla linea cinese. */
+  languages: string[];
+  index_eur?: number | null;
+  last_price_at?: string | null;
+}
+
 interface PriceRow {
   source: string;
   variant: string;
@@ -116,13 +137,31 @@ function textResult(text: string, structured: Record<string, unknown>) {
 }
 
 /**
+ * La riga di coda di una scansione: dice come continuare, o perche' non si
+ * puo'. `narrow` e' il consiglio quando il limite si e' riempito a meta'
+ * pagina; `more` e' cio' che potrebbe esserci oltre le pagine scorse.
+ */
+function scanTrailer(
+  collected: { nextCursor: string | undefined; exhausted: boolean; truncatedMidPage: boolean; scannedPages: number },
+  narrow: string,
+  more: string,
+): string {
+  if (collected.nextCursor !== undefined) return `\n\nMore rows available. Call again with cursor="${collected.nextCursor}".`;
+  if (collected.exhausted) return '';
+  if (collected.truncatedMidPage) {
+    return `\n\nThe row limit filled in the middle of a page, so there is no cursor to continue from: one here would skip the rest of that page. ${narrow}`;
+  }
+  return `\n\nScan stopped after ${collected.scannedPages} pages${more}`;
+}
+
+/**
  * Il messaggio dell'API dice «mandala come header X-Api-Key»: giusto per un
  * client HTTP, sbagliato qui. Un modello non puo' mettere header su questo
  * trasporto, e provando a farlo gira a vuoto invece di chiedere la sola cosa
  * che sblocca la situazione, cioe' una variabile nella configurazione.
  */
 const MISSING_KEY_HELP = [
-  'PTCG_API_KEY is not set for this MCP server. Seven of the eight tools will fail without it. The exception is ptcg_get_reference, which reads a public route; ptcg_get_catalogue_status is not an exception, because after the public /v1/status it reads one set per print region, which is not public.',
+  'PTCG_API_KEY is not set for this MCP server. Every tool but ptcg_get_reference fails without it: that one reads a public route. ptcg_get_catalogue_status is not an exception, because after the public /v1/status it reads one set per print region, which is not public.',
   'This cannot be fixed from inside the conversation: it is an environment variable in the MCP client configuration.',
   'Ask the user to add it, then restart the client. A signup takes one call, no dashboard and no card:',
   '',
@@ -291,26 +330,16 @@ export function createServer(): McpServer {
         );
 
         const rows = collected.rows;
-        const trailer =
-          collected.nextCursor !== undefined
-            ? `
-
-More rows available. Call again with cursor="${collected.nextCursor}".`
-            : collected.exhausted
-              ? ''
-              : collected.truncatedMidPage
-                ? `
-
-The row limit filled in the middle of a page, so there is no cursor to continue from: one here would skip the rest of that page. Narrow the query (a set, a rarity, a tighter release window) or raise limit.`
-                : `
-
-Scan stopped after ${collected.scannedPages} pages without reaching the end of the catalogue; there may be more matches.`;
-
         const text =
           table(
             ['id', 'name', 'set', 'rarity', 'region', 'released', 'EUR idx'],
             rows.map((c) => [c.id, c.name, c.set_code, c.rarity, c.print_region, c.release_date, c.index_eur]),
-          ) + trailer;
+          ) +
+          scanTrailer(
+            collected,
+            'Narrow the query (a set, a rarity, a tighter release window) or raise limit.',
+            ' without reaching the end of the catalogue; there may be more matches.',
+          );
 
         return textResult(text, { cards: rows, complete: collected.exhausted });
       } catch (error) {
@@ -527,26 +556,12 @@ Scan stopped after ${collected.scannedPages} pages without reaching the end of t
         );
 
         const rows = collected.rows;
-        const trailer =
-          collected.nextCursor !== undefined
-            ? `
-
-More rows available. Call again with cursor="${collected.nextCursor}".`
-            : collected.exhausted
-              ? ''
-              : collected.truncatedMidPage
-                ? `
-
-The row limit filled in the middle of a page, so there is no cursor to continue from: one here would skip the rest of that page. Narrow the window or raise limit.`
-                : `
-
-Scan stopped after ${collected.scannedPages} pages; there may be more matching sets.`;
-
         const text =
           table(
             ['code', 'name', 'region', 'released', 'printed', 'total'],
             rows.map((set) => [set.code, set.name, set.region, set.release_date, set.printed_total, set.total]),
-          ) + trailer;
+          ) +
+          scanTrailer(collected, 'Narrow the window or raise limit.', '; there may be more matching sets.');
 
         return textResult(text, { sets: rows, complete: collected.exhausted });
       } catch (error) {
@@ -685,7 +700,7 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
           // Diceva `EBAY_SOLD`, che non esiste e fa prendere un 400 a chi ci
           // filtra, e ometteva PRICECHARTING, che e' la seconda fonte per volume.
           price_sources: ['TCGPLAYER', 'PRICECHARTING', 'CARDMARKET', 'CARDTRADER', 'EBAY', 'COMMUNITY', 'PTCG_INDEX'],
-          coverage_notes: [KOREAN_COVERAGE, GAMEPLAY_FIELDS, LANGUAGE_CAVEAT],
+          coverage_notes: [KOREAN_COVERAGE, GAMEPLAY_FIELDS, LANGUAGE_CAVEAT, SEALED_COVERAGE],
         };
 
         const text = [
@@ -699,6 +714,8 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
           KOREAN_COVERAGE,
           '',
           GAMEPLAY_FIELDS,
+          '',
+          SEALED_COVERAGE,
         ].join('\n');
 
         return textResult(text, coverage);
@@ -708,7 +725,196 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
     },
   );
 
-  // ── 8 · riconoscimento da foto ────────────────────────────────────────────
+  // ── 8 · sigillati: ricerca ────────────────────────────────────────────────
+  /**
+   * La lista non ha un filtro di lingua, e «i booster box cinesi» e' la
+   * domanda per cui questi strumenti esistono: `language` scorre pagine da
+   * 100 e tiene le righe la cui `languages` contiene il valore, con le garanzie
+   * di `collect` (il taglio si dichiara, il cursore solo a pagina intera). Le
+   * pagine costano 2 crediti l'una, ed e' scritto nella descrizione.
+   */
+  server.registerTool(
+    'ptcg_search_sealed',
+    {
+      title: 'Search sealed products',
+      description:
+        'Booster boxes, booster packs, elite trainer boxes, tins, blisters and collections, by name, set, kind or ' +
+        'language, each with its set, release date, the languages it physically exists in and its euro index. ' +
+        'Covers the international, Japanese and Simplified Chinese lines: the Chinese line carries languages ["zh"]. ' +
+        '1 credit per 50 rows; a language filter scans pages of 100 (2 credits each) and keeps the matching rows. ' +
+        'Quotes are a separate call, ptcg_get_sealed_prices, with the id returned here.' +
+        COMMERCIAL_HANDOFF,
+      annotations: READ_ONLY,
+      inputSchema: fromJsonSchema<{
+        name?: string;
+        set?: string;
+        kind?: string;
+        language?: string;
+        lang?: string;
+        order_by?: string;
+        limit?: number;
+        cursor?: string;
+      }>({
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'Product name or part of it, e.g. "evolving skies booster box", or an exact sku.' },
+          set: { type: 'string', description: 'Set code, slug or alternate id, as returned by ptcg_list_sets.' },
+          kind: {
+            type: 'string',
+            description:
+              'Product kind as printed in the kind column: BOOSTER_BOX, BOOSTER_PACK, ETB, TIN, BLISTER, COLLECTION and ' +
+              'others. Read the values off a search rather than guessing; an unknown kind returns no rows.',
+          },
+          language: {
+            type: 'string',
+            description:
+              'Keep only products whose languages contains this ISO 639-1 code, e.g. "zh" for the Simplified Chinese ' +
+              'line, "ja", "en". Scans pages of 100 at 2 credits each.',
+          },
+          lang: { type: 'string', enum: [...LOCALES], description: 'Return product names in this locale, falling back to English.' },
+          order_by: {
+            type: 'string',
+            description:
+              '"-release_date" (default), "release_date", "name", "sku", "updated_at", "set", "-index_eur" or ' +
+              '"-last_price_at". Every order ends on sku.',
+          },
+          limit: { type: 'integer', minimum: 1, maximum: MAX_ROWS, description: `Rows, capped at ${MAX_ROWS}.` },
+          cursor: { type: 'string', description: 'Opaque cursor from a previous call. Never construct one.' },
+        },
+        additionalProperties: false,
+      }),
+    },
+    async (args) => {
+      try {
+        const limit = clampLimit(args.limit);
+        const language =
+          args.language === undefined || args.language.trim() === '' ? undefined : args.language.trim().toLowerCase();
+
+        const collected = await collect<SealedRow>(
+          (cursor) =>
+            api.get<Envelope<SealedRow>>('/v1/sealed', {
+              // `q` su /v1/sealed e' testo libero sul nome o uno sku esatto,
+              // NON la grammatica a campi delle carte.
+              q: args.name,
+              set: args.set,
+              kind: args.kind === undefined ? undefined : args.kind.trim().toUpperCase(),
+              lang: args.lang,
+              orderBy: args.order_by,
+              cursor: cursor ?? args.cursor,
+              limit: language === undefined ? limit : 100,
+              // L'indice costa quanto la lista nuda (1 credito ogni 50 righe
+              // chieste): senza, la colonna EUR resterebbe vuota.
+              include: 'index',
+            }),
+          (product): Verdict => (language === undefined || product.languages.includes(language) ? 'keep' : 'skip'),
+          limit,
+        );
+
+        const rows = collected.rows;
+        const text =
+          table(
+            ['id', 'name', 'kind', 'set', 'languages', 'released', 'EUR idx'],
+            rows.map((p) => [p.id, p.name, p.kind, p.set_code, p.languages.join(','), p.release_date, p.index_eur]),
+          ) +
+          scanTrailer(
+            collected,
+            'Narrow the query (a set, a kind, a name) or raise limit.',
+            language === undefined
+              ? '; there may be more matches.'
+              : ` without reaching the end of the sealed catalogue; there may be more products in "${language}".`,
+          );
+
+        return textResult(text, { products: rows, complete: collected.exhausted });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  // ── 9 · sigillati: prezzi ─────────────────────────────────────────────────
+  /**
+   * Due chiamate e non una: la lista non incorpora le quotazioni
+   * (`include=prices` su /v1/sealed e' un 400), quindi il nome e le lingue del
+   * prodotto arrivano da `/v1/sealed/{id}` e le righe da `/prices`. Tre crediti
+   * in tutto, scritti nella descrizione.
+   */
+  server.registerTool(
+    'ptcg_get_sealed_prices',
+    {
+      title: 'Get prices for a sealed product',
+      description:
+        'Every current price observation for one sealed product, by the id ptcg_search_sealed returns (its sku), ' +
+        'each with its source, basis, the language the box is printed in and the day it is for, plus the product ' +
+        'index in euro. 3 credits: one for the product, two for the quotes. ' +
+        SEALED_COVERAGE +
+        ' Never quote a price without its as_of date and its source.' +
+        COMMERCIAL_HANDOFF,
+      annotations: READ_ONLY,
+      inputSchema: fromJsonSchema<{ id: string; currency?: string }>({
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Product id (its sku) or slug, e.g. "evolving-skies-booster-box".' },
+          currency: {
+            type: 'string',
+            enum: ['EUR', 'USD'],
+            description: 'Only show rows already denominated in this currency. Nothing is ever converted.',
+          },
+        },
+        required: ['id'],
+        additionalProperties: false,
+      }),
+    },
+    async (args) => {
+      try {
+        const path = `/v1/sealed/${encodeURIComponent(args.id)}`;
+        const product = await api.get<SealedRow>(path);
+        const prices = await api.get<{
+          data: { sealed_id: string; index: { eur: number; as_of: string } | null; quotes: PriceRow[] };
+          meta: { quotes: number; delayed_hours: number; withheld?: string[] };
+        }>(`${path}/prices`);
+
+        const all = prices.data.quotes;
+        const rows = args.currency === undefined ? all : all.filter((p) => p.currency === args.currency);
+        const withheld = prices.meta.withheld ?? [];
+        const index = prices.data.index;
+
+        // I prezzi non si tagliano: vedi il commento in render.ts.
+        const text =
+          `${product.name} (${product.id}) — ${product.kind ?? '—'}, set ${product.set_code ?? '—'}, ` +
+          `languages ${product.languages.length === 0 ? '—' : product.languages.join(', ')}; ` +
+          `index ${index === null ? '—' : `${index.eur} EUR as of ${index.as_of}`}\n\n` +
+          table(
+            // `loc` e' la lingua in cui la scatola e' stampata: un box cinese e
+            // uno inglese dello stesso set sono due prodotti e due prezzi.
+            ['source', 'variant', 'basis', 'price', 'cur', 'loc', 'as_of', 'n'],
+            rows.map((p) => [p.source, p.variant, p.basis, p.amount, p.currency, p.locale, p.as_of, p.sample_n]),
+          ) +
+          (withheld.length === 0
+            ? ''
+            : `\n\nWithheld by the plan of this key, not missing from the catalogue: ${withheld.join(', ')}.`);
+
+        return textResult(text, {
+          product: {
+            id: product.id,
+            name: product.name,
+            kind: product.kind,
+            set_code: product.set_code,
+            set_name: product.set_name,
+            languages: product.languages,
+            index_eur: product.index_eur ?? null,
+            last_price_at: product.last_price_at ?? null,
+          },
+          index,
+          prices: rows,
+          ...(withheld.length === 0 ? {} : { withheld }),
+        });
+      } catch (error) {
+        return errorResult(error);
+      }
+    },
+  );
+
+  // ── 10 · riconoscimento da foto ───────────────────────────────────────────
   /**
    * L'unico strumento che scrive qualcosa (un'immagine) e l'unico che costa 25
    * crediti invece di uno. Entrambe le cose stanno nella descrizione, perche' un
@@ -827,8 +1033,8 @@ Scan stopped after ${collected.scannedPages} pages; there may be more matching s
             ? 'No candidates within range.'
             : table(['id', 'name', 'set / no.', 'region', 'rarity', 'distance', ...(include === undefined ? [] : ['index EUR', 'quotes'])], rows),
           '',
-          'distance is 0-512, lower is closer; real matches land well under 150. ' +
-            `Compared against ${body.meta.cards_indexed} indexed card images.`,
+          'distance is 0-512, lower is closer: signature Hamming distance or round(cosine distance × 340), clamped to 0-512; nothing above 170 is returned. ' +
+            `Signature index: ${body.meta.cards_indexed} card images.`,
           ...(body.withheld?.length ? [`Plan withheld: ${body.withheld.join(', ')}.`] : []),
         ].join('\n');
 
