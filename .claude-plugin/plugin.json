@@ -1,0 +1,35 @@
+{
+  "name": "pokemontcgapi",
+  "version": "0.1.10",
+  "description": "Pokémon card data for agents: English, Japanese and Simplified Chinese cards, sets, illustrators, sealed products and prices that carry their source, grade and date.",
+  "author": {
+    "name": "pokemontcgapi.com",
+    "url": "https://pokemontcgapi.com"
+  },
+  "homepage": "https://pokemontcgapi.com/mcp",
+  "repository": "https://github.com/pokemontcgapi/mcp-server",
+  "license": "MIT",
+  "keywords": ["pokemon", "pokemon-tcg", "tcg", "card-prices", "cardmarket", "mcp"],
+  "icon": "./assets/logo.png",
+  "documentationUrl": "https://pokemontcgapi.com/mcp",
+  "supportUrl": "https://github.com/pokemontcgapi/mcp-server/issues",
+  "privacyPolicyUrl": "https://pokemontcgapi.com/legal/privacy",
+  "termsOfServiceUrl": "https://pokemontcgapi.com/legal/terms",
+  "userConfig": {
+    "api_key": {
+      "type": "string",
+      "title": "pokemontcgapi.com API key",
+      "description": "Sent only to api.pokemontcgapi.com. Get one at https://pokemontcgapi.com/free-api-key",
+      "sensitive": true
+    }
+  },
+  "mcpServers": {
+    "pokemontcgapi": {
+      "command": "npx",
+      "args": ["-y", "@pokemontcgapi/mcp@0.1.10"],
+      "env": {
+        "PTCG_API_KEY": "${user_config.api_key}"
+      }
+    }
+  }
+}

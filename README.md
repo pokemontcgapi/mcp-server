@@ -41,7 +41,14 @@ The key comes back in `data.key.secret`. Confirming the address we email raises 
 
 ## Install
 
-Claude Code:
+Claude Code, as a plugin. It asks for the key once, keeps it in secure storage, and adds a skill
+that tells Claude how to read the price rows:
+
+```
+/plugin install pokemontcgapi --marketplace pokemontcgapi/mcp-server
+```
+
+Claude Code, the server alone:
 
 ```bash
 claude mcp add pokemontcgapi --env PTCG_API_KEY=your-key -- npx -y @pokemontcgapi/mcp

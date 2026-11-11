@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "pokemontcgapi": {
+      "command": "npx",
+      "args": ["-y", "@pokemontcgapi/mcp@0.1.10"],
+      "env": {
+        "PTCG_API_KEY": "${PTCG_API_KEY}"
+      }
+    }
+  }
+}
