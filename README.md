@@ -3,7 +3,7 @@
 [![npm](https://img.shields.io/npm/v/%40pokemontcgapi%2Fmcp)](https://www.npmjs.com/package/@pokemontcgapi/mcp) [![license](https://img.shields.io/npm/l/%40pokemontcgapi%2Fmcp)](./LICENSE) [![Glama](https://glama.ai/mcp/servers/pokemontcgapi/mcp-server/badges/score.svg)](https://glama.ai/mcp/servers/pokemontcgapi/mcp-server)
 
 An [MCP](https://modelcontextprotocol.io) server for the Pokémon TCG API at
-[pokemontcgapi.com](https://pokemontcgapi.com). It gives an agent thirteen tools over the whole
+[pokemontcgapi.com](https://pokemontcgapi.com/?utm_source=npm&utm_medium=readme&utm_campaign=mcp_server). It gives an agent thirteen tools over the whole
 catalogue: international, Japanese and Simplified Chinese print lines, card names in
 eight locales, illustrators, images, and prices that carry their source, basis, grade and sample
 size. The current counts are live at
@@ -33,11 +33,11 @@ Lost the response? Repeat the exact same request (same Idempotency-Key, same bod
 
 We store only a hash of the key; the signup response is kept for 24 hours so the same request can be replayed. Save `data.key.secret` now.
 
-If replay is unavailable, [sign in](https://pokemontcgapi.com/account) and rotate the key, or use /v1/accounts/recover with an already verified email to get a new secret.
+If replay is unavailable, [sign in](https://pokemontcgapi.com/account?utm_source=npm&utm_medium=readme&utm_campaign=mcp_server) and rotate the key, or use /v1/accounts/recover with an already verified email to get a new secret.
 
 The key comes back in `data.key.secret`. Confirming the address we email raises the trial from
 80 to 800 credits, and the trial ends 30 days after signup. Paid plans start at 29 EUR a month:
-[pricing](https://pokemontcgapi.com/pricing).
+[pricing](https://pokemontcgapi.com/pricing?utm_source=npm&utm_medium=readme&utm_campaign=mcp_server).
 
 ## Install
 
@@ -144,7 +144,7 @@ There is deliberately **no confirm tool**. An assistant cannot assert that a per
 lines. Only the app collecting that person's explicit acceptance may send confirmed_by: person.
 Always display **ceiling from centering alone, not a prediction of the final grade**. Never label a
 result verified or certified. Keep source status, incomplete flags and uncertainty visible.
-See the [two-step guide](https://pokemontcgapi.com/docs/centering).
+See the [two-step guide](https://pokemontcgapi.com/docs/centering?utm_source=npm&utm_medium=readme&utm_campaign=mcp_server).
 
 Commercial refusals put `next_step.handoff` on the first line of the tool result, followed by the API message and complete details. Show that sentence and its URL to the account owner verbatim and do not retry. The owner completes checkout, email verification or the contact step. `CARD_ALLOWANCE_EXCEEDED` is one of them: the period has retrieved its distinct-card allowance (1,000 for the trial, 30,000 a month on Developer); cards already retrieved keep answering, new ones need the next period or Growth.
 
@@ -157,9 +157,9 @@ Add `include=translations` for names at the plain catalogue cost. Priced include
 For a single print region, add `q=set.region:JP` or `q=set.region:CN`; `lang` only selects a name translation.
 Use `/v1/sets/{code}/cards` when you need a particular set and `/v1/sets?region=JP` to browse set metadata.
 
-The [quickstart](https://pokemontcgapi.com/docs/quickstart#page-the-whole-catalogue) contains both
+The [quickstart](https://pokemontcgapi.com/docs/quickstart?utm_source=npm&utm_medium=readme&utm_campaign=mcp_server#page-the-whole-catalogue) contains both
 paging loops and dated measurements. The
-[migration guide](https://pokemontcgapi.com/docs/migrate-from-pokemontcg-io) explains how to capture
+[migration guide](https://pokemontcgapi.com/docs/migrate-from-pokemontcg-io?utm_source=npm&utm_medium=readme&utm_campaign=mcp_server) explains how to capture
 a change feed watermark before importing and maintain the replica afterwards.
 The MCP search tool is intended for bounded interactive searches; its `region` argument is sent to
 the API as `set.region:JP` (or `CN`, `WEST`), so a Japanese search reads Japanese rows only. Use REST
@@ -245,8 +245,8 @@ newer is answered with that. Verified against the published package, not read of
 ## Also available
 
 - **TypeScript SDK**, zero runtime dependencies: [`@pokemontcgapi/sdk`](https://www.npmjs.com/package/@pokemontcgapi/sdk) — [source](https://github.com/pokemontcgapi/sdk-typescript)
-- **Docs**: <https://pokemontcgapi.com/docs>
-- **Coverage, measured live**: <https://pokemontcgapi.com/coverage>
+- **Docs**: [pokemontcgapi.com/docs](https://pokemontcgapi.com/docs?utm_source=npm&utm_medium=readme&utm_campaign=mcp_server)
+- **Coverage, measured live**: [pokemontcgapi.com/coverage](https://pokemontcgapi.com/coverage?utm_source=npm&utm_medium=readme&utm_campaign=mcp_server)
 
 ## Build from source
 
@@ -261,7 +261,7 @@ typechecks and builds on both Node 20 and Node 22, and that `npm pack` produces
 the file list the registry is meant to receive.
 
 This package is developed inside the private monorepo that runs
-[pokemontcgapi.com](https://pokemontcgapi.com) and mirrored here on each release,
+[pokemontcgapi.com](https://pokemontcgapi.com/?utm_source=npm&utm_medium=readme&utm_campaign=mcp_server) and mirrored here on each release,
 so a merged pull request travels back by hand rather than by merge button. That
 is not a reason to send patches elsewhere — open the issue or the PR here, it is
 the address that gets read.
@@ -269,4 +269,4 @@ the address that gets read.
 ## Licence
 
 MIT. Data served by the API carries per-source redistribution terms — see
-<https://pokemontcgapi.com/legal/attribution>.
+[pokemontcgapi.com/legal/attribution](https://pokemontcgapi.com/legal/attribution?utm_source=npm&utm_medium=readme&utm_campaign=mcp_server).

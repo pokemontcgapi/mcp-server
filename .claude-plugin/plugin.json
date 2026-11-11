@@ -1,6 +1,6 @@
 {
   "name": "pokemontcgapi",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Pokémon card data for agents: English, Japanese and Simplified Chinese cards, sets, illustrators, sealed products and prices that carry their source, grade and date.",
   "author": {
     "name": "pokemontcgapi.com",
@@ -26,7 +26,7 @@
   "mcpServers": {
     "pokemontcgapi": {
       "command": "npx",
-      "args": ["-y", "@pokemontcgapi/mcp@0.1.10"],
+      "args": ["-y", "@pokemontcgapi/mcp@0.1.11"],
       "env": {
         "PTCG_API_KEY": "${user_config.api_key}"
       }
